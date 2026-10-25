@@ -90,15 +90,33 @@ is an **XiongMai / XMEye (Sofia) OEM** — same family as XMEye, gCMOB, vMEyeSup
 | ONVIF | sometimes, on :8899, often unauthenticated snapshots |
 | Cloud reality | vendor relay sees your video; the serial + password is all anyone needs |
 
-### Do the 10-minute RTSP test first
+### Plain terms: what RTSP is and why we care
 
-If a path plays *and* you can log into site B's router, forwarding :554 gives you native
-`go2rtc` video with no Android layer — strictly better. Run this on a laptop plugged into the DVR's
-switch:
+Right now the video only exists **inside the vendor's cloud**. The phone app connects out to
+`RXCamView`'s servers using the `RSV…` serial, and those servers relay the stream to you — that's
+why it works from home with no setup, and also why nothing else can show the picture.
+
+**RTSP** is just a generic video URL (`rtsp://…`). Many DVRs offer one *in addition* to the app.
+If this DVR does, any program can open it — VLC, `go2rtc`, a recorder — and the cameras stop being
+a phone-only thing. Benefit: no Android layer, less CPU, a better picture, and recording becomes
+possible later. Cost: RTSP only listens on the DVR's own network, so to watch from the *other*
+restaurant you must either forward a port on site B's router or put a small always-on device there.
+If you can't log into that router, RTSP changes nothing for you — which is why Waydroid is the plan
+and this is only a bonus check.
+
+### The 10-minute RTSP check (optional)
+
+Cheapest version, no laptop: on site B's DVR monitor, open **Setup → Network** and look for
+`RTSP`, `ONVIF`, `Media port 554`, or a `554` next to HTTP (80). Write down what's listed.
+
+With a laptop that can join site B's network:
 
 ```bash
 ./cams/probe.sh 192.168.1.50 admin 'password'
 ```
+
+It prints each URL it tries, then a verdict. `OK /cam/realmonitor…[h264 1280x720]` means a video
+URL answers; a wall of `--` plus a verdict means that door is closed.
 
 - **Some path plays** + router access → forward :554 (strong password, nonstandard port) and use
   `cams/install-cams.sh` locally; skip the rest of this phase.
