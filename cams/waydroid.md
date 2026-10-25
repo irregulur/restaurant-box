@@ -73,7 +73,7 @@ launcher fullscreen instead, if you prefer that.
 [Desktop Entry]
 Type=Application
 Name=Cameras
-Exec=/home/user/Documents/Projects/restaurant-box/cams/waydroid-cam.sh com.example.rxcam
+Exec=/path/to/restaurant-box/cams/waydroid-cam.sh com.example.rxcam
 X-GNOME-Autostart-enabled=true
 ```
 

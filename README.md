@@ -3,6 +3,25 @@
 Headless setup for the restaurant mini PC (CachyOS): **background music on our speakers**,
 **live view of the other site's DVR cameras**, and **remote admin from home**.
 
+## Install (one line, on the mini PC)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/irregulur/restaurant-box/main/install.sh | sudo bash
+```
+
+Then the only hand-edits:
+
+```bash
+aplay -l                                  # find the USB DAC's card name
+sudoedit /etc/mpd.conf                    # audio_output -> device "hw:NAME,0"
+sudo systemctl restart mpd
+rsync -av ~/Music/restaurant/ /srv/music/  # music appears on its own within 20 s
+sudo tailscale up --ssh                   # then: ssh <host>, http://<host>:9090
+```
+
+No audio files yet? Everything installs and runs, but there is silence until tracks land in
+`/srv/music` — `songs.csv` is a want-list, not audio. `restaurant-wanted` tells you what to buy.
+
 ```
 SITE B                                    SITE A (mini PC + speakers)
 ┌──────────────────┐                     ┌──────────────────────────────────────────┐

@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 # install.sh — site A (the mini PC with the speakers). Idempotent; safe to re-run.
-#   sudo ./install.sh
+#
+#   from a checkout:   sudo ./install.sh
+#   one-liner:         curl -fsSL https://raw.githubusercontent.com/irregulur/restaurant-box/main/install.sh | sudo bash
 set -euo pipefail
 
-SRC="$(cd "$(dirname "$0")" && pwd)"
+# Self-bootstrapping: when piped from curl there are no sibling files, so pull the tarball.
+SRC="${SRC:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo /tmp)}"
+REPO="${REPO:-irregulur/restaurant-box}"
+if [ ! -f "$SRC/music/mpd.conf" ]; then
+    echo "== bootstrap: fetching $REPO =="
+    d=$(mktemp -d)
+    curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/main" | tar xz -C "$d" --strip-components=1
+    exec bash "$d/install.sh" "$@"
+fi
+
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 
 echo "== packages =="
