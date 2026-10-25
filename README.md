@@ -8,7 +8,7 @@ SITE B                                    SITE A (mini PC + speakers)
 ┌──────────────────┐                     ┌──────────────────────────────────────────┐
 │ Cobra DVR        │  vendor P2P cloud   │ mini PC                                  │
 │  (XM/XMEye OEM)  │                     │   mpd ──► USB DAC ──► amp ──► speakers   │
-│  serial RSV…  ───┼──► RXCamView ───────┼─► old Samsung phone (works today)        │
+│  serial RSV…  ───┼──► RXCamView ───────┼─► Waydroid window (Android app)          │
 │  :34567 Sofia    │                     │   mympd :8080   (staff phone control)    │
 │  :554 RTSP?      │                     │   cockpit :9090, sshd                    │
 └──────────────────┘                     │   tailscale ◄──────── your home          │
@@ -73,55 +73,46 @@ curated rotation on top. Many small venues run exactly that hybrid.
 
 ---
 
-## Phase 2 — cameras (site B)
+## Phase 2 — cameras (site B, shown at A)
 
-**You already have a working solution: RXCamView + the serial (`RSV…`) + the old Samsung at A.**
-`RXCamView` means the DVR is an **XiongMai / XMEye (Sofia protocol) OEM** — same family as
-XMEye, gCMOB, vMEyeSuper, KMEye. Practical consequences:
+**Target: one screen.** Music from `mpd`, cameras from the RXCamView Android app running in
+**Waydroid** on the same mini PC → `cams/waydroid.md`. Nothing to buy; CachyOS ships `waydroid`
+(`extra`) and `waydroid-image` (`cachyos`), and binderfs is already built into its kernel.
+
+Why an Android container instead of an RTSP client: `RXCamView` + the `RSV…` serial means the DVR
+is an **XiongMai / XMEye (Sofia) OEM** — same family as XMEye, gCMOB, vMEyeSuper, KMEye.
 
 | | |
 |---|---|
-| Live view from anywhere | ✅ already works (P2P cloud, no ports, no Tailscale) |
+| Live view from anywhere | ✅ P2P cloud, no ports, no Tailscale needed |
 | RTSP | **maybe** — many XM firmwares do serve it on :554, many don't. Test, don't assume |
-| Local protocol | :34567 Sofia (proprietary, ffmpeg/go2rtc cannot speak it) |
-| ONVIF | sometimes, on :8899 and often no auth on snapshots |
+| Local protocol | :34567 Sofia (proprietary — ffmpeg/go2rtc cannot speak it) |
+| ONVIF | sometimes, on :8899, often unauthenticated snapshots |
 | Cloud reality | vendor relay sees your video; the serial + password is all anyone needs |
 
-So the question is not "how do I view the cameras" — that's solved. It's "do I want them
-*inside my own tooling*" (one screen, recording, no vendor cloud, snapshots). That costs money;
-viewing does not.
+### Do the 10-minute RTSP test first
 
-### Should you buy the $25 thin client?
-
-Only if a `probe.sh` run at site B finds RTSP. Test it on a laptop plugged into the DVR's switch:
+If a path plays *and* you can log into site B's router, forwarding :554 gives you native
+`go2rtc` video with no Android layer — strictly better. Run this on a laptop plugged into the DVR's
+switch:
 
 ```bash
 ./cams/probe.sh 192.168.1.50 admin 'password'
 ```
 
-- **Some path plays** → worth the thin client: `./cams/install-cams.sh cam1 'rtsp://…'`, then view at
-  `http://<node-b>:1984/streams.html` from A or home, or on a kiosk screen at A.
-- **Only 34567 open, no RTSP** → **buy nothing.** The Samsung phone is the correct answer. If you
-  later want a kiosk instead of a phone, the cheap path is a used thin client + $12 USB HDMI
-  capture of the DVR's monitor output, feeding an RTSP server — *not* a protocol reverse-engineering
-  project.
+- **Some path plays** + router access → forward :554 (strong password, nonstandard port) and use
+  `cams/install-cams.sh` locally; skip the rest of this phase.
+- **Only 34567 open, no RTSP** → expected for this family. **Buy nothing**, use Waydroid.
+
+### If you do end up with RTSP
 
 Use the **sub stream** (`stream=1` / `subtype=1` / `102`) for remote viewing — a 4-cam main-stream
 is 30 Mbit and will stutter over WAN; sub streams are ~1 Mbit each and look fine at kiosk size.
-If the DVR only emits H.265, append `#video=h264` to the stream URL and go2rtc transcodes.
+If the DVR only emits H.265, append `#video=h264` and go2rtc transcodes.
 
-### Alternatives to the phone at A (all free)
-
-1. **Waydroid** on the mini PC — runs the RXCamView Android APK in a container; the P2P app is
-   simple enough that it often works. Experimental, requires Wayland, expect a weekend of fiddling.
-2. **Older iPad/tablet in Guided Access** — slightly nicer than a phone on a charger; you already
-   have iPads.
-3. **Scrcpy over USB** from the mini PC to an Android device — mirrors the app into the PC's screen,
-   so the "phone on the wall" becomes part of the desktop. Needs the device anyway; neat, not urgent.
-
-Low-bandwidth idea if you ever get a node at B: `http://<dvr>/webcapture.jpg?command=snap&channel=1`
-returns a JPEG on most XM/Dahua OEMs. Eight channels of 1 frame / 3 s is ~10 Kbit/s total — a
-"wall of snapshots" page that works over a terrible link, where video would not.
+Low-bandwidth trick: `http://<dvr>/webcapture.jpg?command=snap&channel=1` returns a JPEG on most
+XM/Dahua OEMs — eight channels of 1 frame / 3 s is ~10 Kbit/s total, a "wall of stills" that
+survives a link where video would not.
 
 ---
 
@@ -173,6 +164,8 @@ systemd/restaurant-audio.service
 music/mpd.conf             minimal headless mpd, ALSA out, replaygain
 music/restaurant-audio.sh  keeper loop: mpd up, queue loaded, playing
 music/wanted.py            songs.csv vs library -> what still needs buying
+cams/waydroid.md           one-screen cameras: Android app on the mini PC
+cams/waydroid-cam.sh       start container/session, launch the viewer app
 cams/probe.sh              DVR port + RTSP path discovery
 cams/install-cams.sh       go2rtc on the node that sits next to the DVR (site B)
 cams/go2rtc.yaml           stream definitions
