@@ -1,0 +1,19 @@
+[Unit]
+Description=Restaurant background music keeper (mpd up, queue loaded, playing)
+After=mpd.service sound.target network.target
+Wants=mpd.service
+# Do not fight systemd: mpd may be restarted by us at any time.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/restaurant-audio
+Restart=always
+RestartSec=10
+# audio does not need the network; keep it out of the way of updates
+Nice=-5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=4
+
+[Install]
+WantedBy=multi-user.target

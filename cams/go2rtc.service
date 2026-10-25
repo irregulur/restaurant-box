@@ -1,0 +1,21 @@
+[Unit]
+Description=go2rtc (RTSP -> WebRTC relay for the site-B DVR)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=go2rtc
+Group=go2rtc
+ExecStart=/usr/local/bin/go2rtc -config /etc/go2rtc/go2rtc.yaml
+Restart=always
+RestartSec=3
+# no writes needed; config is read-only
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/go2rtc
+
+[Install]
+WantedBy=multi-user.target

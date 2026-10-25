@@ -1,0 +1,10 @@
+[Unit]
+Description=Restaurant box health check (ntfy watchdog)
+After=network-online.target mpd.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/restaurant-health
+EnvironmentFile=-/etc/restaurant-health.env
+Nice=10
