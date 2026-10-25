@@ -3,21 +3,21 @@
 Headless setup for the restaurant mini PC (CachyOS): **background music on our speakers**,
 **live view of the other site's DVR cameras**, and **remote admin from home**.
 
-Two nodes, split by where the hardware physically is:
-
 ```
-SITE B (restaurant with the DVR)          SITE A (restaurant with the mini PC + speakers)
-┌───────────────────────────┐             ┌──────────────────────────────────────────┐
-│ Cobra DVR (own drives)    │             │ mini PC                                  │
-│   └─ RTSP :554            │             │   mpd ──► USB DAC ──► amp ──► speakers   │
-│ tiny node (RPi/N100)      │             │   mympd  :8080   (staff phone control)   │
-│   └─ go2rtc :1984 ────────┼──tailscale──┼─► browser kiosk (or any phone/laptop)    │
-│   └─ tailscale            │             │   cockpit :9090  sshd   tailscale        │
-└───────────────────────────┘             └──────────────────────────────────────────┘
+SITE B                                    SITE A (mini PC + speakers)
+┌──────────────────┐                     ┌──────────────────────────────────────────┐
+│ Cobra DVR        │  vendor P2P cloud   │ mini PC                                  │
+│  (XM/XMEye OEM)  │                     │   mpd ──► USB DAC ──► amp ──► speakers   │
+│  serial RSV…  ───┼──► RXCamView ───────┼─► old Samsung phone (works today)        │
+│  :34567 Sofia    │                     │   mympd :8080   (staff phone control)    │
+│  :554 RTSP?      │                     │   cockpit :9090, sshd                    │
+└──────────────────┘                     │   tailscale ◄──────── your home          │
+                                         └──────────────────────────────────────────┘
 ```
 
-No port forwarding anywhere. Everything rides the Tailscale tunnel, so the DVR never
-sees the internet and you can watch the cameras from the restaurant *or* from home.
+**Tailscale is for remote admin of the mini PC only.** Camera viewing already works from
+anywhere through the DVR's own P2P cloud + RXCamView, so **no second box is required** —
+see "Phase 2 — cameras" for when buying one would actually buy you something.
 
 ---
 
@@ -26,13 +26,9 @@ sees the internet and you can watch the cameras from the restaurant *or* from ho
 | Piece | Node | Why there |
 |---|---|---|
 | `mpd` + `mympd` | A | speakers are at A |
-| `go2rtc` | **B** | it must reach the DVR over its own LAN; A's browser just opens B's web UI over Tailscale |
-| `tailscale` | both | the only network plumbing |
-| `cockpit` + `sshd` | A (and B) | browser/terminal admin from home |
-
-If you'd rather not add a node at B, two fallbacks (worse, in order):
-1. DVR port-forward to a nonstandard port + strong password → A pulls `rtsp://` over WAN. Works, but exposes the DVR; only accept if nothing better exists.
-2. DVR vendor's cloud app on a tablet at A. Zero engineering, zero privacy, usually fine for "is the fry cook still there" checks.
+| `tailscale` | A (+ your home devices) | remote admin only — not needed for cameras |
+| `cockpit` + `sshd` | A | browser/terminal admin from home |
+| `go2rtc` | **only if** the DVR turns out to serve RTSP | it must sit on the DVR's own LAN (site B) |
 
 ---
 
@@ -79,25 +75,53 @@ curated rotation on top. Many small venues run exactly that hybrid.
 
 ## Phase 2 — cameras (site B)
 
-First find out what that DVR speaks. On the node at B:
+**You already have a working solution: RXCamView + the serial (`RSV…`) + the old Samsung at A.**
+`RXCamView` means the DVR is an **XiongMai / XMEye (Sofia protocol) OEM** — same family as
+XMEye, gCMOB, vMEyeSuper, KMEye. Practical consequences:
+
+| | |
+|---|---|
+| Live view from anywhere | ✅ already works (P2P cloud, no ports, no Tailscale) |
+| RTSP | **maybe** — many XM firmwares do serve it on :554, many don't. Test, don't assume |
+| Local protocol | :34567 Sofia (proprietary, ffmpeg/go2rtc cannot speak it) |
+| ONVIF | sometimes, on :8899 and often no auth on snapshots |
+| Cloud reality | vendor relay sees your video; the serial + password is all anyone needs |
+
+So the question is not "how do I view the cameras" — that's solved. It's "do I want them
+*inside my own tooling*" (one screen, recording, no vendor cloud, snapshots). That costs money;
+viewing does not.
+
+### Should you buy the $25 thin client?
+
+Only if a `probe.sh` run at site B finds RTSP. Test it on a laptop plugged into the DVR's switch:
 
 ```bash
-./cams/probe.sh 192.168.1.50 admin 'password'     # tries ports + common RTSP paths
+./cams/probe.sh 192.168.1.50 admin 'password'
 ```
 
-Decision tree:
+- **Some path plays** → worth the thin client: `./cams/install-cams.sh cam1 'rtsp://…'`, then view at
+  `http://<node-b>:1984/streams.html` from A or home, or on a kiosk screen at A.
+- **Only 34567 open, no RTSP** → **buy nothing.** The Samsung phone is the correct answer. If you
+  later want a kiosk instead of a phone, the cheap path is a used thin client + $12 USB HDMI
+  capture of the DVR's monitor output, feeding an RTSP server — *not* a protocol reverse-engineering
+  project.
 
-- **A path plays** → `./cams/install-cams.sh cam1 rtsp://admin:pw@192.168.1.50:554/cam/realmonitor?channel=1&subtype=1`
-  (repeat per channel). View at `http://<tailscale-name-b>:1984/streams.html`.
-- **Only 34567 answers (Sofia/XMEye OEM)** → no RTSP. Use the vendor app, or the DVR's HDMI monitor
-  output → cheap HDMI-to-RTSP encoder.
-- **Nothing** → cloud P2P only; vendor app at A is your answer.
+Use the **sub stream** (`stream=1` / `subtype=1` / `102`) for remote viewing — a 4-cam main-stream
+is 30 Mbit and will stutter over WAN; sub streams are ~1 Mbit each and look fine at kiosk size.
+If the DVR only emits H.265, append `#video=h264` to the stream URL and go2rtc transcodes.
 
-Use the **sub stream** (`subtype=1` / `102`) for remote viewing — a 4-cam main-stream grid is
-30 Mbit and will stutter over WAN; sub streams are ~1 Mbit each and look fine at kiosk size.
-If the DVR only emits H.265, append `#video=h264` to the stream URL and go2rtc transcodes (costs CPU).
+### Alternatives to the phone at A (all free)
 
-Kiosk screen at A (optional): `chromium --kiosk --noerrdialogs http://<node-b>:1984/streams.html`
+1. **Waydroid** on the mini PC — runs the RXCamView Android APK in a container; the P2P app is
+   simple enough that it often works. Experimental, requires Wayland, expect a weekend of fiddling.
+2. **Older iPad/tablet in Guided Access** — slightly nicer than a phone on a charger; you already
+   have iPads.
+3. **Scrcpy over USB** from the mini PC to an Android device — mirrors the app into the PC's screen,
+   so the "phone on the wall" becomes part of the desktop. Needs the device anyway; neat, not urgent.
+
+Low-bandwidth idea if you ever get a node at B: `http://<dvr>/webcapture.jpg?command=snap&channel=1`
+returns a JPEG on most XM/Dahua OEMs. Eight channels of 1 frame / 3 s is ~10 Kbit/s total — a
+"wall of snapshots" page that works over a terrible link, where video would not.
 
 ---
 
