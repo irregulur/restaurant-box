@@ -147,9 +147,20 @@ transfer). mpd is already configured for `replaygain "track"`, but that only wor
 files carry ReplayGain tags — downloads do not have them. Scan the library once:
 
 ```bash
-paru -S --needed rsgain      # AUR, rewrites tags only, never touches the audio data
-rsgain easy /srv/music       # writes REPLAYGAIN_TRACK_GAIN / _PEAK per file
-mpc update
+paru -S --needed rsgain     # AUR; or the self-contained binary from
+                            # https://github.com/complexlogic/rsgain/releases (no build)
+sudo ./music/tag-gain.sh /srv/music          # writes the tags, never touches audio
+sudo systemctl restart mpd
+```
+
+`music/tag-gain.sh` calls `rsgain custom -s i -c p` on the files explicitly. Use it rather
+than `rsgain easy`: on a flat library (no album folders) easy mode reports
+"Found 1 directory... No files were scanned" and does nothing.
+
+Check a file with `strings` — for Ogg/Opus, `ffprobe` does not show these:
+
+```bash
+strings /srv/music/*.opus[1] | grep REPLAYGAIN
 ```
 
 mpd picks the tags up on the next restart (`sudo systemctl restart mpd`). If everything is
@@ -159,11 +170,9 @@ now too quiet overall, raise it in `/etc/mpd.conf`:
 replaygain_preamp   "+3.0"
 ```
 
-Re-run `rsgain easy /srv/music` after adding new music. If it prints `No files were scanned`, the
-files are WebM containers named `.opus` (a yt-dlp quirk) — run `music/fix-containers.sh
-/srv/music` first, which remuxes them to real Ogg/Opus without re-encoding. `loudgain` is the older alternative
-(AUR) if rsgain gives you trouble; mpd's own `volume_normalization "yes"` exists but it is a
-crude peak-normalizer and flattens the dynamics — use ReplayGain.
+Re-run `tag-gain.sh` after adding music. `loudgain` is the older alternative (AUR) if rsgain
+gives you trouble; mpd's own `volume_normalization "yes"` exists but it is a crude
+peak-normalizer and flattens the dynamics — use ReplayGain.
 
 ### Turning `pandora/songs.csv` into a shopping list
 
