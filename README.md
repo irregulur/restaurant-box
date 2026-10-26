@@ -432,8 +432,9 @@ table inet admin {
 
 In the order that actually solves it — the first two need nobody in the building:
 
-1. **Tailnet**: `ssh desktop-user@100.64.0.x`, `http://100.64.0.x:9090`. If the box is not in
-   `tailscale status`, suspect the control plane (`headscale.example.com`) before the box.
+1. **Tailnet**: `ssh <desktop-user>@<tailnet-ip>`, `http://<tailnet-ip>:9090` — both from
+   `tailscale status` on either machine. If the box is not in `tailscale status`, suspect the
+   control plane (`headscale.example.com`, wherever you host it) before the box.
 2. **Same wifi as the box**: `install.sh` opens 22 and 9090 to `192.168.0.0/16`, `10.0.0.0/8`
    and `172.16.0.0/12`, so a phone on the restaurant's network reaches Cockpit even when the
    tailnet is down. Find the address on the venue router's client list.

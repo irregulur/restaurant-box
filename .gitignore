@@ -1,2 +1,6 @@
-__pycache__/
+# Outputs of the music scripts, not sources
 wanted-missing.csv
+music/__pycache__/
+*.pyc
+*.temp.*
+*.part
