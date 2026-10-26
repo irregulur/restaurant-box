@@ -114,6 +114,10 @@ if command -v ufw >/dev/null 2>&1; then
     if [ -n "$LAN" ]; then
         for p in 22 3389 9090 8080; do ufw allow from "$LAN" to any port "$p" proto tcp >/dev/null 2>&1 || true; done
     fi
+    # Tailscale arrives on its own interface, so the LAN rule above does not cover
+    # it. Without this, ssh over the tailnet is dropped by default-deny-incoming and
+    # the box looks unreachable from home even though `tailscale status` is green.
+    ufw allow in on tailscale0 >/dev/null 2>&1 || true
     ufw --force enable >/dev/null 2>&1 || true
     ufw status | sed -n '1,10p'
 fi

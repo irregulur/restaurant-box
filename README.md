@@ -352,6 +352,16 @@ sudo systemctl enable --now sshd cockpit.socket
 
 From home: `http://<mini-pc>:9090` (Cockpit: services, logs, terminal, reboots, disk) or
 `ssh mini`. Cockpit covers ~95 % of "something broke" without a GUI.
+
+Two things that make this survive a year without you thinking about it:
+
+- **Disable key expiry for the box** in the Tailscale admin console (Machines → the box →
+  *Disable key expiry*). The default is 180 days, after which the node silently drops off the
+  tailnet and "remote access" quietly stops working — the failure shows up months later, at
+  the worst time.
+- `ufw allow in on tailscale0`. The installer does this, but check it: CachyOS ships
+  default-deny-incoming, and the LAN-scoped rules do **not** cover traffic arriving on the
+  tailnet. Symptom is `tailscale status` green and ssh timing out anyway.
 If you truly need the desktop: **Sunshine + Moonlight**, set up and working — recipe in
 `ops/remote-screen.md`, including the headless `vkms` trick that avoids buying a dummy plug.
 (`krdp` was tried first and abandoned: its `Users=` allowlist plus mandatory NLA never accepted
