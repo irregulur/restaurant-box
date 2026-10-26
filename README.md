@@ -350,6 +350,28 @@ tailscale up --ssh                     # both nodes; enable Tailscale SSH
 sudo systemctl enable --now sshd cockpit.socket
 ```
 
+**Self-hosted headscale?** The box must join the *same* control server as the machines you
+admin from — a node on login.tailscale.com and your laptop on headscale are two separate
+networks that cannot see each other, and `tailscale status` looks healthy on both sides while
+ssh times out:
+
+```bash
+# on the headscale host — older builds want a numeric user id, not the name
+headscale users list
+headscale preauthkeys create --user 1 --reusable --expiration 24h
+```
+
+```bash
+# on the box
+sudo tailscale down
+sudo tailscale up --login-server https://headscale.example.com --authkey hskey-... --ssh
+tailscale status                       # peers from your tailnet should be listed
+```
+
+A headscale with no `derp.urls` has no relay to fall back on, so if the restaurant blocks
+outbound UDP the link simply fails instead of getting slower — `tailscale ping` saying `via
+DERP` (or nothing at all) is the tell.
+
 From home: `http://<mini-pc>:9090` (Cockpit: services, logs, terminal, reboots, disk) or
 `ssh mini`. Cockpit covers ~95 % of "something broke" without a GUI.
 
