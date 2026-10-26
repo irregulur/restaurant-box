@@ -115,7 +115,7 @@ mpc update                 # scan the library for new files (also happens automa
 mpc clear                  # empty the queue
 mpc add /                  # queue every file in the library
 mpc repeat 1               # loop the queue, not one track
-mpc random 0               # play it in order (set 1 for shuffle)
+mpc random 1               # shuffle (0 = play the queue in order)
 mpc play
 mpc save restaurant        # remembers it as "restaurant" -> later: mpc load restaurant
 mpc status                 # [playing] + track + volume
@@ -124,6 +124,44 @@ mpc status                 # [playing] + track + volume
 `restaurant-audio` does the same thing automatically whenever the queue is empty, so this is
 the manual version of what already happens after a reboot. Volume is `mpc volume +5` /
 `mpc volume 70`; the whole thing is also `mympd` at `http://<mini-pc>:8080`.
+
+#### Removing a song
+
+There is no "hide" — mpd indexes everything under `/srv/music`, so a file is in the library.
+Delete it:
+
+```bash
+mpc search -f '%file%' title 'No One in the World'   # -> the path, relative to /srv/music
+rm -- /srv/music/'Anita Baker - No One in the World.m4a'
+mpc update                                            # prunes it from the library
+mpc clear && mpc add /                                # rebuild the queue without it
+```
+
+Also delete the line from `pandora/songs.csv`, otherwise a future `music/fetch.sh` run will
+go looking for it again.
+
+#### Making the volume even
+
+Some tracks are mastered much louder than others (`Such a Night` next to a 1950s 78 rpm
+transfer). mpd is already configured for `replaygain "track"`, but that only works once the
+files carry ReplayGain tags — downloads do not have them. Scan the library once:
+
+```bash
+paru -S --needed rsgain      # AUR, rewrites tags only, never touches the audio data
+rsgain easy /srv/music       # writes REPLAYGAIN_TRACK_GAIN / _PEAK per file
+mpc update
+```
+
+mpd picks the tags up on the next restart (`sudo systemctl restart mpd`). If everything is
+now too quiet overall, raise it in `/etc/mpd.conf`:
+
+```
+replaygain_preamp   "+3.0"
+```
+
+Re-run `rsgain easy /srv/music` after adding new music. `loudgain` is the older alternative
+(AUR) if rsgain gives you trouble; mpd's own `volume_normalization "yes"` exists but it is a
+crude peak-normalizer and flattens the dynamics — use ReplayGain.
 
 ### Turning `pandora/songs.csv` into a shopping list
 

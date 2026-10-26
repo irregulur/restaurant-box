@@ -45,7 +45,7 @@ while :; do
             mpc load "$PL" >/dev/null 2>&1
         fi
         mpc repeat 1 >/dev/null 2>&1
-        mpc random 0 >/dev/null 2>&1   # already shuffled at build time
+        mpc random 1 >/dev/null 2>&1   # shuffle: never the same order twice
         mpc play >/dev/null 2>&1
         log "started: $(mpc current 2>/dev/null)"
         sleep "$INTERVAL"
