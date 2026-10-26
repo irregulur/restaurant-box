@@ -58,6 +58,10 @@ Both are ordinary `.desktop` launchers, so they also appear in the app menu.
 The **Music** window opens by itself when the box finishes booting (an autostart entry in
 `~/.config/autostart/`), so a shift starts with the player on screen instead of an empty
 desktop. If someone closes it, the **Music** button brings it straight back.
+
+No KDE Wallet dialog at login either: the installer writes `~/.config/kwalletrc` with the
+wallet disabled, and the player's browser is started with `--password-store=basic`. There
+is nothing secret on this box, so there is nothing for a wallet to ask about.
 If something is wrong the button says so in plain words ("The music player is not
 responding — try again in a minute") instead of opening a blank page.
 

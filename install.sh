@@ -68,6 +68,13 @@ if [ -n "$DESKTOP_USER" ] && [ "$DESKTOP_USER" != root ]; then
     install -m755 -o "$DESKTOP_USER" -g "$DESKTOP_USER" \
         "$SRC/desktop/restaurant-music.desktop" "$UHOME/.config/autostart/restaurant-music.desktop"
     echo "added Music autostart for $DESKTOP_USER"
+    # No KDE Wallet prompt. The kiosk browser is told --password-store=basic, but
+    # plasma itself will still offer to open a wallet; on a box with no secrets that
+    # is only a password dialog in the way of the music.
+    install -d -o "$DESKTOP_USER" -g "$DESKTOP_USER" "$UHOME/.config"
+    printf '[Wallet]\nEnabled=false\nFirst Use=false\n' > "$UHOME/.config/kwalletrc"
+    chown "$DESKTOP_USER:$DESKTOP_USER" "$UHOME/.config/kwalletrc"
+    echo "disabled KDE Wallet for $DESKTOP_USER"
 else
     echo "skipped desktop icons: no login user detected (run the installer via sudo ./install.sh as that user)"
 fi
