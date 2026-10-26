@@ -174,6 +174,37 @@ Re-run `tag-gain.sh` after adding music. `loudgain` is the older alternative (AU
 gives you trouble; mpd's own `volume_normalization "yes"` exists but it is a crude
 peak-normalizer and flattens the dynamics — use ReplayGain.
 
+### Names and cover art
+
+yt-dlp is honest about the audio and careless about the metadata: a user upload lands as
+artist `mangeldeth74`, title `Louis Jordan - Is You Is Or Is You Ain't`. `songs.csv` is the
+ground truth for names, and the catalogue can supply the album and its cover:
+
+```bash
+sudo pacman -S --needed python-mutagen
+./music/tags.py songs.csv /srv/music --dry     # preview, changes nothing
+./music/tags.py songs.csv /srv/music           # ~225 lookups, one per second
+sudo systemctl restart mpd
+```
+
+What it does:
+
+- rewrites artist and title from the matching `songs.csv` row, using the same loose
+  matching as `wanted.py` — so `mangeldeth74 - Louis Jordan - Is You Is ...` becomes
+  `Louis Jordan / Is You Is Or Is You Ain't (My Baby)`;
+- adds album, release year and track number from the catalogue entry it picks (exact
+  title/artist beats fuzzy, an earlier release beats a later re-issue, karaoke and
+  tribute uploads are scored out);
+- downloads the 600×600 cover and embeds it in the file (`METADATA_BLOCK_PICTURE` for
+  Ogg/Opus, `covr` for m4a) so mympd shows a picture instead of a placeholder;
+- strips yt-dlp's `comment`/`description` blurb;
+- never renames or moves files, so the mpd queue and `restaurant-audio.sh` keep working;
+- is safe to re-run: files that already have a cover are skipped (`--force` redoes them,
+  `--only-tags` fixes names with no network at all).
+
+Read the output: `+` tagged with art, `-` corrected names but the catalogue had no match
+(obscure 78 rpm transfers land here), `?` the file is not in `songs.csv` and was left alone.
+
 ### Turning `pandora/songs.csv` into a shopping list
 
 ```bash

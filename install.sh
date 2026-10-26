@@ -18,7 +18,7 @@ fi
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 
 echo "== packages =="
-pacman -S --needed --noconfirm mpd mpc mympd ffmpeg jq curl nmap cockpit tailscale chromium mpv
+pacman -S --needed --noconfirm mpd mpc mympd ffmpeg jq curl nmap cockpit tailscale chromium mpv python-mutagen
 
 echo "== directories =="
 # group-writable so you can rsync music in as your own user; mpd only needs read
