@@ -181,7 +181,8 @@ URL answers; a wall of `--` plus a verdict means that door is closed.
 
 - **Some path plays** + router access → forward :554 (strong password, nonstandard port) and use
   `cams/install-cams.sh` locally; skip the rest of this phase.
-- **Only 34567 open, no RTSP** → expected for this family. **Buy nothing**, use Waydroid.
+- **Only 34567 open, no RTSP** → expected for this family. Then it's a port-forward at site B
+  plus a re-probe, or back to the parked Android route — see `cams/waydroid.md`.
 
 ### If you do end up with RTSP
 
