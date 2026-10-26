@@ -48,7 +48,6 @@ monitor attached):
 ```ini
 csrf_allowed_origins = https://<mini-pc>:47990
 capture = kms
-adapter_name = /dev/dri/card0
 encoder = software
 ```
 
@@ -74,9 +73,51 @@ virtual DRM driver, gives the machine a fake connected monitor for $0:
 
 ```bash
 sudo modprobe vkms
-echo vkms | sudo tee /etc/modules-load.d/vkms.conf     # survive reboots
-cat /sys/class/drm/*/status                            # card0-Virtual-1 -> connected
+cat /sys/class/drm/*/status                            # card1-Virtual-1 -> connected
 ```
+
+### Load `vkms` after `i915`, or Sunshine will lose its display again
+
+This is the one thing on this page that costs an evening if you get it wrong, so it is
+written out in full.
+
+**Sunshine enumerates the DRM cards exactly once, at startup, and keeps that answer.** If
+the virtual display is not there at that instant it gives up and every Moonlight connection
+gets `Error 503 Host returned error: Failed to initialize video capture/encoding. Is a
+display connected and turned on?` until the service is restarted. It does not re-scan.
+
+So two things have to be true on every boot:
+
+1. `i915` owns `card0` and `vkms` is `card1`. Module load order at boot is not
+   deterministic: if `vkms` wins it takes `card0`, and a virtual card has **no render
+   node**, so there is nowhere to encode (`Warning: No render device name for:
+   /dev/dri/card0`, then every encoder fails).
+2. `vkms` must exist before Sunshine starts.
+
+Both are satisfied by letting `vkms` load at normal module-load time but forcing `i915`
+ahead of it:
+
+```bash
+echo 'softdep vkms pre: i915' | sudo tee /etc/modprobe.d/vkms-order.conf
+echo vkms | sudo tee /etc/modules-load.d/vkms.conf
+sudo reboot
+```
+
+Verify after the reboot, in this order:
+
+```bash
+ls -l /dev/dri/                  # card0 then card1; renderD128 belongs to i915
+cat /sys/class/drm/*/status      # exactly one "connected"
+journalctl --user -u app-dev.lizardbyte.app.Sunshine.service -b --no-pager \
+    | grep -c 'Found connector'  # >= 1
+```
+
+**Do not set `adapter_name`.** It is tempting, and it is a trap: the name `card0` means a
+different device depending on load order, and pointing it at a `/dev/dri/by-path/...-render`
+node is worse still — a render node has no connectors or CRTCs, so KMS capture reads a
+`0x0` resolution and dies with `Unable to initialize capture method`. With the key absent,
+Sunshine picks the card that actually has a connected connector, which is the behaviour that
+survives the cards being renumbered.
 
 Then set a sane mode (KDE tools need the session env when run over SSH — the socket is
 usually `wayland-1`, not `wayland-0`):
