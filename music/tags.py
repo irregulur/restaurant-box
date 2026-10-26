@@ -102,12 +102,24 @@ def itunes(artist: str, title: str):
 
 
 def fetch_cover(url: str):
+    """Largest cover the CDN will give us.
+
+    mzstatic serves any size off the same asset id, but it is not always willing:
+    it answers 400 for some ids at some sizes, so try down the list rather than
+    lose the picture entirely.
+    """
     if not url:
         return None
-    # 100x100bb -> 600x600bb; the mzstatic CDN serves any size off the same id
-    big = url.replace("100x100bb", "600x600bb").replace("60x60bb", "600x600bb")
-    data = _get(big)
-    return data if len(data) >= ART_MIN else None
+    candidates = [url.replace("100x100bb", f"{n}x{n}bb").replace("60x60bb", f"{n}x{n}bb")
+                  for n in (600, 300, 100)] + [url]
+    for candidate in dict.fromkeys(candidates):
+        try:
+            data = _get(candidate)
+        except Exception:                                            # noqa: BLE001
+            continue
+        if len(data) >= ART_MIN:
+            return data
+    return None
 
 
 def embed(path: str, img: bytes, mime: str = "image/jpeg") -> None:
@@ -354,7 +366,7 @@ def main() -> int:
             skipped += 1
             print(f"  ?  {base}  (not in songs.csv, left alone)")
             continue
-        artist, title = hit
+        artist, title = clean(hit[0]), clean(hit[1])
         if (artist, title) != (a0, t0):
             renamed += 1
         if args.only_tags:
