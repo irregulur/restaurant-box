@@ -159,7 +159,9 @@ now too quiet overall, raise it in `/etc/mpd.conf`:
 replaygain_preamp   "+3.0"
 ```
 
-Re-run `rsgain easy /srv/music` after adding new music. `loudgain` is the older alternative
+Re-run `rsgain easy /srv/music` after adding new music. If it prints `No files were scanned`, the
+files are WebM containers named `.opus` (a yt-dlp quirk) — run `sudo music/fix-containers.sh
+/srv/music` first, which remuxes them to real Ogg/Opus without re-encoding. `loudgain` is the older alternative
 (AUR) if rsgain gives you trouble; mpd's own `volume_normalization "yes"` exists but it is a
 crude peak-normalizer and flattens the dynamics — use ReplayGain.
 

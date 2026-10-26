@@ -79,6 +79,10 @@ echo "== downloading; failures are skipped and listed at the end"
 "${YT[@]}"
 rc=$?
 
+# yt-dlp names WebM-wrapped Opus files ".opus"; remux them to real Ogg/Opus or the
+# ReplayGain scan (rsgain/loudgain) aborts on the first one it cannot tag.
+[ -x "$HERE/fix-containers.sh" ] && "$HERE/fix-containers.sh" "$MUSIC"
+
 echo
 echo "== now on disk:"
 python3 "$HERE/wanted.py" "$CSV" "$MUSIC" -o "$MISSING" 2>/dev/null | tail -2
