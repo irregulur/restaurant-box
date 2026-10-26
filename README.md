@@ -424,8 +424,23 @@ table inet admin {
   ntfy alerts (mpd not playing, go2rtc down, tunnel down, disk >90 %).
 - Audio: **USB DAC or the analog jack, not HDMI.** HDMI audio dies headless when the amp is off
   at boot and is the single most common "no sound" cause in this kind of build.
-- Loudness: run `rsgain easy /srv/music` (AUR) once so mpd's `replaygain track` works; a quiet
-  jazz track followed by a hot master is what makes restaurant music annoying.
+- Loudness: `./music/tag-gain.sh /srv/music` once (`rsgain custom`, because `rsgain easy` scans
+  nothing in a flat directory) so mpd's `replaygain track` works; a quiet jazz track followed by
+  a hot master is what makes restaurant music annoying.
+
+### If you can't get in
+
+In the order that actually solves it — the first two need nobody in the building:
+
+1. **Tailnet**: `ssh desktop-user@100.64.0.x`, `http://100.64.0.x:9090`. If the box is not in
+   `tailscale status`, suspect the control plane (`headscale.example.com`) before the box.
+2. **Same wifi as the box**: `install.sh` opens 22 and 9090 to `192.168.0.0/16`, `10.0.0.0/8`
+   and `172.16.0.0/12`, so a phone on the restaurant's network reaches Cockpit even when the
+   tailnet is down. Find the address on the venue router's client list.
+3. **Local console**: plug a USB keyboard and the monitor into the box, `Ctrl+Alt+F3`, log in as
+   the desktop user. This is the only path that survives a broken tailnet *and* an unknown IP.
+4. **Hard reboot**: a smart plug or the power strip. Nothing else rescues a hung box, and a
+   power cut also exercises the autologin/autoplay path, which is what happens for real anyway.
 
 ## Files
 

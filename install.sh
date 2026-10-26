@@ -113,6 +113,14 @@ if command -v ufw >/dev/null 2>&1; then
     LAN="$(ip -4 -o addr show scope global | awk '{print $4}' | head -1)"
     if [ -n "$LAN" ]; then
         for p in 22 3389 9090 8080; do ufw allow from "$LAN" to any port "$p" proto tcp >/dev/null 2>&1 || true; done
+        # Also the private ranges, not just the subnet we happen to be installed on: the box
+        # moves to another building, and if the tailnet is ever down, a phone on that
+        # building's wifi is the only way back in.
+        for net in 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12; do
+            for p in 22 9090; do
+                ufw allow from "$net" to any port "$p" proto tcp >/dev/null 2>&1 || true
+            done
+        done
     fi
     # Tailscale arrives on its own interface, so the LAN rule above does not cover
     # it. Without this, ssh over the tailnet is dropped by default-deny-incoming and
