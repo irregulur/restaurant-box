@@ -54,6 +54,10 @@ Autologin is installed, so a power cut ends with the menu back on screen, no log
 | **Cameras** | `mpv` full screen on the DVR's video stream | the DVR password, once (Phase 2) |
 
 Both are ordinary `.desktop` launchers, so they also appear in the app menu.
+
+The **Music** window opens by itself when the box finishes booting (an autostart entry in
+`~/.config/autostart/`), so a shift starts with the player on screen instead of an empty
+desktop. If someone closes it, the **Music** button brings it straight back.
 If something is wrong the button says so in plain words ("The music player is not
 responding — try again in a minute") instead of opening a blank page.
 

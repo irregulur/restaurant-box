@@ -10,3 +10,4 @@ Terminal=false
 Categories=AudioVideo;Player;
 Keywords=music;radio;play;
 StartupNotify=false
+X-KDE-autostart-after=panel

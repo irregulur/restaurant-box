@@ -24,12 +24,21 @@ done
 
 Ask the owner to run:  sudo pacman -S chromium"; exit 1; }
 
-# If mympd is down, say so instead of showing a blank error page.
-if command -v curl >/dev/null 2>&1 && ! curl -fs -o /dev/null --max-time 3 "$URL"; then
-    say "The music player is not responding.
+# If mympd is down, say so instead of showing a blank error page — but give it time:
+# this also runs from autostart at login, when mympd may still be starting.
+if command -v curl >/dev/null 2>&1; then
+    tries="${MUSIC_WAIT:-20}"
+    up=0
+    for _ in $(seq 1 "$tries"); do
+        if curl -fs -o /dev/null --max-time 3 "$URL"; then up=1; break; fi
+        sleep 2
+    done
+    if [ "$up" != 1 ]; then
+        say "The music player is not responding.
 
 Try again in a minute — it restarts itself. If this keeps happening, tell the owner."
-    exit 1
+        exit 1
+    fi
 fi
 
 flags=(--app="$URL" --no-first-run --no-default-browser-check --disable-features=Translate)
