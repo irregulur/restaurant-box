@@ -48,6 +48,19 @@ systemctl daemon-reload
 echo "== never sleep =="
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
 
+echo "== hostname + firewall =="
+# CachyOS ships ufw default-deny-incoming, which makes ssh/rdp look 'filtered' from the LAN.
+BOXNAME="${BOXNAME:-restaurant-box}"
+hostnamectl hostname "$BOXNAME" 2>/dev/null || true
+if command -v ufw >/dev/null 2>&1; then
+    LAN="$(ip -4 -o addr show scope global | awk '{print $4}' | head -1)"
+    if [ -n "$LAN" ]; then
+        for p in 22 3389 9090 8080; do ufw allow from "$LAN" to any port "$p" proto tcp >/dev/null 2>&1 || true; done
+    fi
+    ufw --force enable >/dev/null 2>&1 || true
+    ufw status | sed -n '1,10p'
+fi
+
 echo "== enable =="
 systemctl enable --now mpd.service
 systemctl enable --now mympd.service
@@ -58,6 +71,8 @@ systemctl enable --now health.timer
 cat <<EOF
 
 Done. Three things are still manual:
+
+0) This machine's name is now $(hostname) — reach it at $(hostname).local (or its IP).
 
 1) Pick the audio output (the only line that usually needs editing):
      aplay -l                      # find "card N: NAME [ ... ]"
