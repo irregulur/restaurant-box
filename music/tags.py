@@ -37,6 +37,25 @@ from mutagen.oggvorbis import OggVorbis  # noqa: E402
 
 UA = {"User-Agent": "restaurant-box/1.0 (+https://github.com/irregulur/restaurant-box)"}
 ART_MIN = 4000           # bytes; anything smaller is a placeholder, not a cover
+RATE_HITS = []           # lookups the catalogue refused; reported at the end
+
+
+def _get(url: str, timeout: int = 30) -> bytes:
+    """GET with backoff. iTunes throttles at roughly 20 requests/minute and answers
+    HTTP 429 once you cross it, which would otherwise silently cost a file its album."""
+    import time as _t
+    import urllib.error
+    for attempt, wait in enumerate((0, 20, 45, 90)):
+        if wait:
+            _t.sleep(wait)
+        try:
+            req = urllib.request.Request(url, headers=UA)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 3:
+                raise
+    raise RuntimeError("unreachable")
 
 
 def itunes(artist: str, title: str):
@@ -49,9 +68,7 @@ def itunes(artist: str, title: str):
     """
     q = urllib.parse.urlencode({"term": f"{artist} {title}", "entity": "song",
                                 "limit": 10, "country": "US"})
-    req = urllib.request.Request(f"https://itunes.apple.com/search?{q}", headers=UA)
-    with urllib.request.urlopen(req, timeout=20) as r:
-        results = json.load(r).get("results", [])
+    results = json.loads(_get(f"https://itunes.apple.com/search?{q}", 20)).get("results", [])
 
     want_a, want_t = norm(artist), norm(title)
     best = None
@@ -83,14 +100,12 @@ def itunes(artist: str, title: str):
     return best[1] if best else None
 
 
-def cover(url: str):
+def fetch_cover(url: str):
     if not url:
         return None
     # 100x100bb -> 600x600bb; the mzstatic CDN serves any size off the same id
     big = url.replace("100x100bb", "600x600bb").replace("60x60bb", "600x600bb")
-    req = urllib.request.Request(big, headers=UA)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = r.read()
+    data = _get(big)
     return data if len(data) >= ART_MIN else None
 
 
@@ -197,23 +212,39 @@ def write_tags(path: str, artist: str, title: str, album: str = "",
         f.save()
 
 
+def cover(need: str, have: set) -> float:
+    """Fraction of the want-row's words that appear in this file's text.
+
+    Substring containment is too brittle for real uploads: the catalogue says
+    "Sidney Bechet & His New Orleans Feetwarmers", the uploader wrote "by Sidney
+    Bechet and his New Orleans Feetwarmers", and one inserted word breaks the test.
+    Word coverage forgives the insert and still refuses a different song.
+    """
+    toks = set(need.split())
+    if not toks:
+        return 0.0
+    return len(toks & have) / len(toks)
+
+
 def best_want(text: str, want):
-    """The want-list row this file is, judged by the same loose rules wanted.py uses."""
+    """The want-list row this file is: best word coverage of artist and title."""
+    have = set(text.split())
     best, score = None, 0.0
     for a, t in want:
         na, nt = norm(a), norm(t)
         if not nt:
             continue
-        s = 0.0
-        if nt and nt in text:
-            s += 1.0
-        else:
-            s += difflib.SequenceMatcher(None, nt, text).ratio() * 0.5
-        if na and na in text:
-            s += 1.0
+        ca, ct = cover(na, have), cover(nt, have)
+        # 0.75 title coverage is the normal bar. Allow one missing word out of three
+        # when the artist is unmistakable and at least two title words survive, which
+        # is what "Franklin St Blues" vs "Franklin Street Blues" looks like.
+        if ct < 0.75 and not (ct >= 0.6 and ca >= 0.8
+                              and len(set(nt.split()) & have) >= 2):
+            continue                     # not the same song, whatever the artist says
+        s = ca * 0.9 + ct + (0.15 if nt in text else 0.0)
         if s > score:
             best, score = (a, t), s
-    return best if score >= 1.6 else None
+    return best if score >= 1.45 else None
 
 
 def main() -> int:
@@ -223,7 +254,8 @@ def main() -> int:
     ap.add_argument("--dry", action="store_true", help="say what would change, write nothing")
     ap.add_argument("--only-tags", action="store_true", help="fix names from the csv, no network")
     ap.add_argument("--force", action="store_true", help="re-fetch art even if already present")
-    ap.add_argument("--sleep", type=float, default=1.0, help="seconds between itunes calls")
+    ap.add_argument("--sleep", type=float, default=3.0,
+                    help="seconds between itunes calls (their limit is ~20/minute)")
     args = ap.parse_args()
 
     want = []
@@ -267,6 +299,8 @@ def main() -> int:
             try:
                 cache[key] = itunes(artist, title)
             except Exception as e:                                   # noqa: BLE001
+                if "429" in str(e):
+                    RATE_HITS.append(key)
                 print(f"  !  {artist} - {title}: lookup failed ({e})", file=sys.stderr)
                 cache[key] = None
             time.sleep(args.sleep)
@@ -281,7 +315,7 @@ def main() -> int:
         trk = str(res.get("trackNumber") or "")
         img = None
         try:
-            img = cover(res.get("artworkUrl100", ""))
+            img = fetch_cover(res.get("artworkUrl100", ""))
         except Exception as e:                                       # noqa: BLE001
             print(f"  !  art failed for {artist} - {title}: {e}", file=sys.stderr)
         write_tags(path, artist, title, album, year, trk, dry=args.dry)
@@ -298,7 +332,10 @@ def main() -> int:
               f"{' +art' if img else ''}")
 
     print(f"\n{len(files)} file(s): {renamed} renamed, {albumed} album, {arted} with cover art,"
-          f" {skipped} unmatched.")
+          f" {skipped} not in songs.csv.")
+    if RATE_HITS:
+        print(f"{len(RATE_HITS)} lookup(s) were rate-limited; just run it again — files that"
+              f" already have art are skipped, so only these come back.")
     if not args.dry:
         print("reload:  sudo systemctl restart mpd")
     return 0

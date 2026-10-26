@@ -183,7 +183,7 @@ ground truth for names, and the catalogue can supply the album and its cover:
 ```bash
 sudo pacman -S --needed python-mutagen
 ./music/tags.py songs.csv /srv/music --dry     # preview, changes nothing
-./music/tags.py songs.csv /srv/music           # ~225 lookups, one per second
+./music/tags.py songs.csv /srv/music           # ~225 lookups, ~3 s apart, ~11 min
 sudo systemctl restart mpd
 ```
 
