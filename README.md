@@ -372,6 +372,15 @@ A headscale with no `derp.urls` has no relay to fall back on, so if the restaura
 outbound UDP the link simply fails instead of getting slower — `tailscale ping` saying `via
 DERP` (or nothing at all) is the tell.
 
+One more headscale difference: `--ssh` makes *tailscaled* answer port 22 and enforce tailnet
+ACLs, and a stock headscale policy has no ssh rule, so every login dies with `tailnet policy
+does not permit you to SSH to this node`. Unless you want to write that policy, leave Tailscale
+SSH off and use the ordinary sshd:
+
+```bash
+sudo tailscale set --ssh=false        # or: tailscale up ... --ssh=false
+```
+
 From home: `http://<mini-pc>:9090` (Cockpit: services, logs, terminal, reboots, disk) or
 `ssh mini`. Cockpit covers ~95 % of "something broke" without a GUI.
 
