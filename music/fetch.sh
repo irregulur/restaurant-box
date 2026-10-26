@@ -75,6 +75,11 @@ if [ "$DRY" = "--dry-run" ]; then
     exit 0
 fi
 
+# Leftovers from an interrupted run (.part / .temp.m4a) look like real tracks to mpd
+# and to anything that walks the library, but no decoder can open them.
+stale=$(find "$MUSIC" -maxdepth 1 -type f \( -name '*.temp.*' -o -name '*.part' -o -name '*.ytdl' \) -print -delete)
+[ -n "$stale" ] && echo "== removed leftover partial downloads: $(printf '%s\n' "$stale" | wc -l)"
+
 echo "== downloading; failures are skipped and listed at the end"
 "${YT[@]}"
 rc=$?
