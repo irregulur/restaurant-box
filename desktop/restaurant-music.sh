@@ -54,6 +54,11 @@ mkdir -p "$PROFILE" 2>/dev/null || true
 # for a wallet password the moment the player opens — on an appliance with no
 # secrets to keep.
 flags+=(--password-store=basic --hide-crash-restore-bubble)
+# Plasma is a Wayland session, but chromium defaults to the X11 backend and dies
+# with "Missing X server or $DISPLAY" when it is started from anything that has no
+# DISPLAY — an ssh shell, a systemd unit. Asking for the platform it was actually
+# designed for removes that whole class of failure.
+flags+=(--ozone-platform-hint=auto)
 if [ "$FULLSCREEN" = 1 ]; then
     flags+=(--start-fullscreen)
 else
