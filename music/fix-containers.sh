@@ -16,8 +16,13 @@ command -v ffmpeg >/dev/null || { echo "ffmpeg is missing: sudo pacman -S ffmpeg
 
 fixed=0 skipped=0
 while IFS= read -r -d '' f; do
-    # only touch the mislabelled ones; real Ogg/Opus says "Ogg data, Opus audio"
-    file -b -- "$f" | grep -qi '^WebM' || continue
+    # Ask ffprobe about the container instead of trusting `file` (or the extension).
+    # yt-dlp's "opus" files are really matroska,webm; a genuine one is ogg.
+    fmt=$(ffprobe -v error -show_entries format=format_name -of default=nw=1:nk=1 -- "$f" 2>/dev/null || true)
+    case "$fmt" in
+        *webm*|*matroska*) ;;
+        *) continue ;;
+    esac
     tmp="$(mktemp "${TMPDIR:-/tmp}/fix-containers.XXXXXX.ogg")"
     if ffmpeg -v error -y -i "$f" -c copy "$tmp" 2>/dev/null; then
         mv -f -- "$tmp" "${f%.opus}.ogg"
@@ -26,7 +31,7 @@ while IFS= read -r -d '' f; do
     else
         rm -f -- "$tmp"
         skipped=$((skipped + 1))
-        echo "skipped (ffmpeg could not copy): $f" >&2
+        echo "skipped (ffmpeg could not copy, format=$fmt): $f" >&2
     fi
 done < <(find "$DIR" -type f -name '*.opus' -print0)
 
