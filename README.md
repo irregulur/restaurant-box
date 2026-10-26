@@ -3,6 +3,10 @@
 Headless setup for the restaurant mini PC (CachyOS): **background music on our speakers**,
 **live view of the other site's DVR cameras**, and **remote admin from home**.
 
+**Status:** music is done and self-healing. Cameras are one field away from done — the DVR
+password, which can be *set* (not recovered) on the DVR's own monitor at site B:
+`Menu → System → Users`. See Phase 2 for why the path changed.
+
 ## Install (one line, on the mini PC)
 
 ```bash
@@ -26,17 +30,16 @@ No audio files yet? Everything installs and runs, but there is silence until tra
 SITE B                                    SITE A (mini PC + speakers)
 ┌──────────────────┐                     ┌──────────────────────────────────────────┐
 │ Cobra DVR        │  vendor P2P cloud   │ mini PC                                  │
-│  (XM/XMEye OEM)  │                     │   mpd ──► USB DAC ──► amp ──► speakers   │
-│  serial RSV…  ───┼──► RXCamView ───────┼─► Waydroid window (Android app)          │
-│  :34567 Sofia    │                     │   mympd :8080   (staff phone control)    │
-│  :554 RTSP?      │                     │   cockpit :9090, sshd                    │
+│  (XM/XMEye OEM)  │ ◄──── phones ───────│   mpd ──► USB DAC ──► amp ──► speakers   │
+│  serial RSV…     │                     │   mpv ──► full-screen cameras (Phase 2)  │
+│  :34567 Sofia    │   :554 forward?     │   mympd :8080   (staff phone control)    │
+│  :554 RTSP?      │ ────────────────────┼─► cockpit :9090, sshd, sunshine :47990   │
 └──────────────────┘                     │   tailscale ◄──────── your home          │
                                          └──────────────────────────────────────────┘
 ```
 
-**Tailscale is for remote admin of the mini PC only.** Camera viewing already works from
-anywhere through the DVR's own P2P cloud + RXCamView, so **no second box is required** —
-see "Phase 2 — cameras" for when buying one would actually buy you something.
+**Tailscale is for remote admin of the mini PC only** — never for video. Today the phones keep
+working through the DVR's own P2P cloud, and that stays true no matter what this box does.
 
 ---
 
@@ -48,7 +51,7 @@ Autologin is installed, so a power cut ends with the menu back on screen, no log
 | Button | Opens | Needs |
 |---|---|---|
 | **Music** | mympd in a full-screen app window: play/pause, volume, playlist | nothing — works today |
-| **Cameras** | the DVR app (RXCamView) inside Waydroid, full screen | `waydroid` + the app installed once |
+| **Cameras** | `mpv` full screen on the DVR's video stream | the DVR password, once (Phase 2) |
 
 Both are ordinary `.desktop` launchers, so they also appear in the app menu.
 If something is wrong the button says so in plain words ("The music player is not
@@ -124,12 +127,21 @@ curated rotation on top. Many small venues run exactly that hybrid.
 
 ## Phase 2 — cameras (site B, shown at A)
 
-**Target: one screen.** Music from `mpd`, cameras from the RXCamView Android app running in
-**Waydroid** on the same mini PC → `cams/waydroid.md`. Nothing to buy; CachyOS ships `waydroid`
-(`extra`) and `waydroid-image` (`cachyos`), and binderfs is already built into its kernel.
+**Target: one screen.** Music from `mpd`, cameras in `mpv` full screen, one kiosk.
 
-Why an Android container instead of an RTSP client: `RXCamView` + the `RSV…` serial means the DVR
-is an **XiongMai / XMEye (Sofia) OEM** — same family as XMEye, gCMOB, vMEyeSuper, KMEye.
+The Android-app route (Waydroid) was built and worked — container, arm64 translation, app
+launching — but it cannot log in, because that Android image has no DHCP client and Android 13
+leaves no CLI to inject a DNS server: `ping 1.1.1.1` replies while every hostname fails. It is
+**parked**, with the full post-mortem in `cams/waydroid.md`. **RTSP is the path**: one `mpv`
+process on the host, iGPU decode, no Android layer, no ARM translation, no netd.
+
+One honest caveat: RTSP listens only on the DVR's own LAN, and the mini PC is at the *other*
+restaurant. So this needs **one port forward on site B's router** (you have the router; that's a
+config change, not a purchase) — or a small always-on box at site B instead. The vendor cloud
+exists precisely to avoid that, and it only speaks to the Android app.
+
+The password is needed either way. `RXCamView` + the `RSV…` serial means the DVR is an
+**XiongMai / XMEye (Sofia) OEM** — same family as XMEye, gCMOB, vMEyeSuper, KMEye.
 
 | | |
 |---|---|
@@ -150,8 +162,8 @@ If this DVR does, any program can open it — VLC, `go2rtc`, a recorder — and 
 a phone-only thing. Benefit: no Android layer, less CPU, a better picture, and recording becomes
 possible later. Cost: RTSP only listens on the DVR's own network, so to watch from the *other*
 restaurant you must either forward a port on site B's router or put a small always-on device there.
-If you can't log into that router, RTSP changes nothing for you — which is why Waydroid is the plan
-and this is only a bonus check.
+If you can't log into that router, RTSP changes nothing for you — which is why the Android-app
+path was tried first.
 
 ### The 10-minute RTSP check (optional)
 
@@ -192,7 +204,10 @@ sudo systemctl enable --now sshd cockpit.socket
 
 From home: `http://<mini-pc>:9090` (Cockpit: services, logs, terminal, reboots, disk) or
 `ssh mini`. Cockpit covers ~95 % of "something broke" without a GUI.
-If you truly need the desktop: RustDesk (self-hosted) or `sunshine` + Moonlight.
+If you truly need the desktop: **Sunshine + Moonlight**, set up and working — recipe in
+`ops/remote-screen.md`, including the headless `vkms` trick that avoids buying a dummy plug.
+(`krdp` was tried first and abandoned: its `Users=` allowlist plus mandatory NLA never accepted
+a login.)
 
 Bind mympd/go2rtc to the Tailscale address only, or drop this in `/etc/nftables.d/`:
 
@@ -232,10 +247,11 @@ music/mpd.conf               minimal headless mpd, ALSA out, replaygain
 music/restaurant-audio.sh    keeper loop: mpd up, queue loaded, playing
 music/wanted.py              songs.csv vs library -> what still needs buying
 desktop/restaurant-music.sh  the Music button (mympd, full screen)
-desktop/restaurant-cams.sh   the Cameras button (Waydroid + DVR app)
+desktop/restaurant-cams.sh   the Cameras button (mpv on RTSP; Waydroid kept as parked fallback)
 desktop/*.desktop            the two icons the employees click
-cams/waydroid.md             one-screen cameras: Android app on the mini PC
-cams/waydroid-cam.sh         start container/session, launch the viewer app
+cams/waydroid.md             PARKED: Android app on the mini PC, and exactly why it failed
+cams/waydroid-cam.sh         parked: start container/session, launch the viewer app
+ops/remote-screen.md         Sunshine + vkms: watch the box's screen from home
 cams/probe.sh                DVR port + RTSP path discovery
 cams/install-cams.sh         go2rtc on the node that sits next to the DVR (site B)
 cams/go2rtc.yaml             stream definitions

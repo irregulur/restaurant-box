@@ -1,130 +1,105 @@
-# Cameras on the mini PC: Waydroid
+# Cameras on the mini PC: Waydroid — **PARKED**
 
-The DVR is an XiongMai/XMEye box (RXCamView + `RSV…` serial). Its only reachable
-interface is the vendor's P2P cloud plus a proprietary Sofia protocol on :34567 —
-so instead of trying to speak that protocol, **run the Android app itself** on the
-mini PC. That is what Waydroid does: a real Android container sharing the kernel,
-one window on the desktop, the cameras next to your music.
+Status: installed, app runs, **cannot reach the network**. Not because of us — this
+Android image has no working DHCP client and no CLI way to hand it a DNS server.
+Kept here so nobody repeats the experiment, and in case a future Waydroid image fixes it.
 
-Nothing to buy. CachyOS ships everything needed:
-
-| Package | Repo | Note |
-|---|---|---|
-| `waydroid` 1.6.3 | `extra` | container + session |
-| `waydroid-image` | `cachyos` | Android 20 system image (no GApps — fine, we sideload) |
-| binderfs | **already in the CachyOS kernel** | no DKMS, no module building |
-
-Check the binder support on the mini PC before anything else:
-
-```bash
-grep -i binder /proc/filesystems     # expect: nodev binder
-```
-
-If that prints nothing, the kernel is missing binder → install `binder_linux-dkms`
-(AUR) or use a stock kernel. On CachyOS 7.x it is built in.
+Verdict: **RTSP is the path.** See "Phase 2" in the README. The blocker there is the DVR
+password, which can be *set* (not recovered) from the DVR's own monitor:
+`Menu → System → Users`.
 
 ---
 
-## 1. Install the container
+## Why Waydroid was tried
+
+The DVR is an XiongMai/XMEye OEM (`RXCamView`, serial `RSV…`). Its local protocol is
+proprietary Sofia on `:34567` — ffmpeg, mpv and go2rtc cannot speak it. RTSP on `:554`
+exists only on some firmwares. So: run the vendor's own Android app instead of fighting
+the protocol.
+
+Two things made that plausible on CachyOS: `waydroid` (`extra`) + `waydroid-image`
+(`cachyos`), and binderfs already built into the kernel (`grep binder /proc/filesystems`
+→ `nodev binder`), so no DKMS and no module rebuilds.
+
+## What worked
 
 ```bash
 sudo pacman -S waydroid waydroid-image
-sudo waydroid init                      # sets up /var/lib/waydroid from the image
+sudo waydroid init
 sudo systemctl enable --now waydroid-container
-waydroid status                         # Session: STOPPED, Container: RUNNING
+waydroid session start &
+waydroid show-full-ui &
 ```
 
-## 2. Get RXCamView in as an APK
-
-Play Store needs GApps; sideloading does not. Get the APK from APKMirror/APKPure
-(or pull it off the dying phone while it still boots — see "rescue the phone" below):
+The APK is **arm64-only** (`bsdtar -tf rxcamview.apk` shows just `lib/arm64-v8a/`:
+`libIOTCAPIs.so`, `libRSNet.so`, `libRSPlay.so` …), and the image is x86_64, so a plain
+`waydroid app install` is a silent no-op. It needs ARM translation:
 
 ```bash
-waydroid app install ~/Downloads/RXCamView.apk
-waydroid app list | grep -iE 'cam|rx|eye|vme'     # note the package name
+sudo pacman -S --needed git python python-virtualenv lzip patchelf unzip wget
+git clone https://github.com/casualsnek/waydroid_script
+cd waydroid_script
+sudo python3 -m venv venv
+sudo venv/bin/pip install -r requirements.txt
+sudo venv/bin/python3 main.py install libndk
 ```
 
-Log in once with the same `RSV…` serial and password the phone uses. This is the
-same cloud account, so it should just work.
+After that, `waydroid app install rxcamview.apk` works and the app opens
+(`com.client.rxcamview`). Everything up to the login screen is fine.
 
-## 3. Launch it as a window
+## Where it died: no DNS inside the container
+
+`eth0` comes up with only a link-local IPv6 address — Android's DHCP client never runs, so
+netd never receives a lease and the network object has no DNS:
+
+```
+NetworkAgentInfo{network{100} ni{Ethernet CONNECTED …
+  DnsAddresses: [ ] Domains: null
+  Routes: [ fe80::/64 -> :: eth0, 192.168.240.0/24 -> 0.0.0.0 eth0 ]}}
+```
+
+The host side is correct and was never the problem: `waydroid0` = `192.168.240.1/24`,
+dnsmasq running with `--dhcp-range 192.168.240.2,192.168.240.254`, `ip_forward=1`,
+ufw allowing routed traffic. Bouncing `eth0` inside Android doesn't trigger a lease either.
+
+Address and routing *can* be forced by hand, and this part genuinely works:
 
 ```bash
-./waydroid-cam.sh                     # lists candidate packages the first time
-./waydroid-cam.sh com.example.rxcam   # launches that app
+sudo waydroid shell ip addr add 192.168.240.112/24 dev eth0
+# the default must go in the per-network table, not `main` — Android policy-routes to it
+sudo waydroid shell ip route add default via 192.168.240.1 dev eth0 table eth0
+timeout 8 sudo waydroid shell ping 1.1.1.1        # replies
+timeout 8 sudo waydroid shell ping google.com     # "unknown host"
 ```
 
-The desktop session must be running (Wayland — CachyOS KDE/GNOME both fine).
-For a normal window that your WM can fullscreen like any other app:
+DNS is where every door closes on Android 13:
 
-```bash
-waydroid prop set persist.waydroid.multi_windows true
-```
+| Attempt | Result |
+|---|---|
+| `setprop net.dns1 …` | ignored, that's pre-Android-10 plumbing |
+| `ndc resolver setnetdns eth0 "" 192.168.240.1` | `500 0 Command not recognized` — resolver subcommand removed from `ndc` |
+| `dhcptool eth0` | not shipped in this image |
+| `cmd ethernet …` | `No shell command implementation` |
+| `dumpsys dnsresolver` | `NetId: 100`, `No DNS servers defined` |
 
-Then `Alt+F11` / `Super+F` / the WM's fullscreen key, and put it on the second
-monitor or a corner of the screen. `waydroid show-full-ui` gives the whole Android
-launcher fullscreen instead, if you prefer that.
+So `ping 1.1.1.1` works and any hostname fails. The vendor login needs hostnames.
 
-## 4. Autostart with the desktop
+## CLI gotchas worth keeping
 
-`~/.config/autostart/cameras.desktop`:
+- `waydroid`'s own argument parser eats flags meant for Android:
+  `waydroid shell ping -c 2 1.1.1.1` → `unrecognized arguments: -c 2`. Same for
+  `sh -c …` and `logcat -d`. Work around with `timeout N waydroid shell ping 1.1.1.1`.
+- `sudo waydroid …` fails with `Using X11 for dbus-daemon autolaunch was disabled at
+  compile time` — sudo drops the session bus. Only `shell` actually needs root.
+- `waydroid app install` is a **silent** no-op when the session is not running or the file
+  path is wrong.
+- `waydroid adb` only does `connect`/`disconnect`; it is not an adb passthrough.
 
-```ini
-[Desktop Entry]
-Type=Application
-Name=Cameras
-Exec=/path/to/restaurant-box/cams/waydroid-cam.sh com.example.rxcam
-X-GNOME-Autostart-enabled=true
-```
+## If someone revisits this
 
-Do **not** try to run this from systemd — it needs your Wayland session.
-
----
-
-## The one real conflict: audio
-
-`mpd` opens the USB DAC directly through ALSA `hw:`, which **excludes every other
-client**. If Android ever produces sound, PipeWire/PulseAudio will grab the DAC and
-music stops. The DVR app is normally silent, so you may never hit this. If you do:
-
-```bash
-# send desktop/Android audio to a dummy sink; mpd keeps the real hardware
-pactl load-module module-null-sink sink_name=silent sink_properties=device.description=Silent
-pactl set-default-sink silent
-```
-
-Persist it by dropping the same two lines into `/etc/pipewire/pipewire.conf.d/` or
-`~/.config/pipewire/pipewire-pulse.conf.d/` (a `context.exec` entry), or just accept
-the one-liner in a startup script. Alternatively mute Android's media volume once —
-it is remembered.
-
----
-
-## Expected rough edges
-
-- **NVIDIA GPU**: Waydroid wants a Wayland compositor it can embed into and does not
-  like NVIDIA's driver. Intel/AMD iGPU is the happy path. If the mini PC is NVIDIA-only,
-  expect swiftshader fallback (works, uglier, fine for one 480p stream) or use the
-  Android-VM fallback below.
-- **Video decode** is often software in Waydroid. One sub-stream at 480p/640×360 is
-  ~10 % of a modern core — acceptable. A 4-cam 1080p grid will not be.
-- **Fullscreen automation is the fiddly part.** `multi_windows` + a WM rule is far more
-  reliable than scripting keybinds into Android.
-
-## Rescue the phone while it still boots
-
-Swollen battery = fire risk. Stop charging it now; if you need the app's saved config,
-`adb shell pm path <pkg>` + `adb pull` gets the APK, and `adb shell` + screenshots gets
-you the serial. Otherwise the credentials are already in your notes/installer record.
-
-## Fallbacks, in order of effort
-
-1. **RTSP after all** — run `./probe.sh` inside site B's LAN. If a path plays *and* you
-   can log into site B's router, forward :554 and use `go2rtc` natively. Better video,
-   no Android layer. Needs router access, which you may not have.
-2. **Android-x86 in QEMU/KVM** (`qemu-full` + `edk2-ovmf`, virtio-gpu) — heavier, but
-   avoids Waydroid's GPU quirks. Boot an Android-x86 ISO, install RXCamView, GLES
-   passthrough via `virtio-gpu`.
-3. **HDMI capture** — $12 USB capture dongle on the mini PC, fed by any Android device
-   (the iPad, a $30 TV box) showing RXCamView. Cameras become a video input window.
-   Keeps everything on one screen, no protocol fighting.
+The cheapest test is not the app at all — put the vendor's hostnames in
+`/system/etc/hosts` instead of giving Android a resolver (CDN addresses, so it decays).
+Better: get the DVR password, run `./probe.sh <dvr-ip> admin '<pass>'`, and if `:554`
+answers, delete this file and use mpv. Keep the audio conflict in mind too: `mpd` owns the
+USB DAC through ALSA `hw:`, so anything else that wants to make sound needs to be muted or
+routed to a dummy sink.

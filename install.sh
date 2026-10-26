@@ -18,7 +18,7 @@ fi
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 
 echo "== packages =="
-pacman -S --needed --noconfirm mpd mpc mympd ffmpeg jq curl nmap cockpit tailscale chromium
+pacman -S --needed --noconfirm mpd mpc mympd ffmpeg jq curl nmap cockpit tailscale chromium mpv
 
 echo "== directories =="
 # group-writable so you can rsync music in as your own user; mpd only needs read
@@ -112,14 +112,14 @@ Done. Three things are still manual:
 2) Copy music in (FLAC/MP3/M4A/OGG):
      rsync -av ~/Music/restaurant/ $(hostname):/srv/music/
 
-3) Cameras (Android app in a container — no phone needed on the counter):
-     sudo pacman -S --needed waydroid waydroid-image
-     sudo waydroid init                     # downloads the Android image once
-     waydroid session start && waydroid show-full-ui
-     # install RXCamView inside Android, log in once, then:
-     waydroid app list                      # find its package name
-     echo 'CAM_PKG=<package>' | sudo tee /etc/restaurant-cams.conf
-     # the Cameras button now opens it directly
+3) Cameras (one line, once the DVR password is known):
+     # from a laptop on the DVR's own network, find a working URL:
+     ./cams/probe.sh <dvr-ip> admin '<password>'
+     # if a rtsp:// path answers, point the button at it:
+     echo 'CAM_RTSP="rtsp://..."' | sudo tee /etc/restaurant-cams.conf
+
+   The Android-app route (waydroid) is documented but parked - it cannot resolve DNS
+   inside the container. Read cams/waydroid.md before spending an evening on it.
 
 4) Screen settings (Settings -> Power / Screen Locking):
      Screen Energy Saving: off   |   Screen Locking: disabled
@@ -129,6 +129,9 @@ Done. Three things are still manual:
      sudo tailscale up --ssh
      # then: ssh $(hostname)   or   http://$(hostname):9090  (Cockpit)
      sudo systemctl enable --now sshd
+
+   To actually SEE this box's desktop from home (Sunshine + Moonlight, incl. the
+   headless vkms trick): ops/remote-screen.md
 
 Watchdog alerts need a topic:
      echo 'NTFY_URL=https://ntfy.sh/CHANGE-ME' | sudo tee /etc/restaurant-health.env

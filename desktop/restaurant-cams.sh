@@ -1,21 +1,52 @@
 #!/usr/bin/env bash
-# The "Cameras" button. Starts the Waydroid Android layer if needed, then opens
-# the DVR app (RXCamView / XMEye family) full screen so one tap shows the other
-# restaurant's cameras — no phone, no laptop.
+# The "Cameras" button.
+#
+# Preferred path: a plain RTSP URL from the DVR, played by mpv full screen — host-native,
+# one process, iGPU decode, nothing to maintain. Set it in /etc/restaurant-cams.conf.
+#
+# Fallback: the RXCamView Android app inside Waydroid. That path is PARKED — it installs
+# and runs, but Android never got a DHCP lease in the container and Android 13 offers no
+# way to inject DNS by hand, so the cloud login cannot resolve. See cams/waydroid.md for
+# the full post-mortem. The code is kept in case DNS is solved later.
 set -uo pipefail
 
-PKG="${CAM_PKG:-}"
-# Optional:  echo 'CAM_PKG=com.xmeye.rxcamview' | sudo tee /etc/restaurant-cams.conf
+CAM_RTSP="${CAM_RTSP:-}"
+CAM_PKG="${CAM_PKG:-}"
+# /etc/restaurant-cams.conf, e.g.
+#   CAM_RTSP="rtsp://admin:pass@192.168.1.50:554/user=admin&password=pass&channel=1&stream=1.sdp?real_stream"
+#   CAM_PKG="com.client.rxcamview"
 [ -f /etc/restaurant-cams.conf ] && . /etc/restaurant-cams.conf
-PKG="${CAM_PKG:-$PKG}"
 
 say() { kdialog --title "Cameras" --error "$1" 2>/dev/null ||
         zenity --error --title "Cameras" --text="$1" 2>/dev/null ||
         printf '%s\n' "$1" >&2; }
 
-command -v waydroid >/dev/null 2>&1 || { say "Cameras are not set up on this machine yet.
+# ---- 1. RTSP: the good path -------------------------------------------------
+if [ -n "${CAM_RTSP:-}" ]; then
+    if ! command -v mpv >/dev/null 2>&1; then
+        say "The video player is missing.
 
-Ask the owner to run:  sudo pacman -S waydroid waydroid-image"; exit 1; }
+Ask the owner to run:  sudo pacman -S mpv"
+        exit 1
+    fi
+    # --cache=no keeps it live rather than sliding behind; tcp survives a flaky link
+    mpv --fs --no-border --force-window=yes --title=Cameras \
+        --rtsp-transport=tcp --cache=no --network-timeout=10 \
+        "$CAM_RTSP" && exit 0
+    say "The cameras did not answer.
+
+The DVR may be rebooting, or the network may be down.
+Try again in a minute."
+    exit 1
+fi
+
+# ---- 2. Waydroid: parked fallback -------------------------------------------
+command -v waydroid >/dev/null 2>&1 || {
+    say "Cameras are not set up on this machine yet.
+
+Ask the owner to run cams/probe.sh against the DVR — it needs the DVR password."
+    exit 1
+}
 
 running() { waydroid status 2>/dev/null | grep -qi 'Session:.*RUNNING'; }
 

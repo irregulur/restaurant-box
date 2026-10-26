@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # waydroid-cam.sh — bring an Android app (the camera viewer) up on the mini PC.
 #
+# PARKED — see cams/waydroid.md. The app launches but cannot reach the network
+# (no DHCP client in this Android image, and no CLI left to set DNS). Kept for the
+# day a newer waydroid-image fixes that. The cameras now go through mpv + RTSP.
+#
 #   ./waydroid-cam.sh                 # list candidate packages
 #   ./waydroid-cam.sh com.rxcamview   # start container/session if needed, launch app
 #
