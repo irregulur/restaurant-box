@@ -19,8 +19,14 @@ AUDIO = (".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".aac")
 
 def norm(s: str) -> str:
     s = s.lower()
+    # Everything below is noise that YouTube/Deezer/whatever appends to a title and
+    # that the want-list never has: "(1990 Remaster)", "(Official Audio)", "- Topic" ...
     for junk in ("(1990 remaster)", "(remaster)", "- remastered", "remastered",
-                 "(remastered)", "(deluxe edition)", " - deluxe edition"):
+                 "(remastered)", "(deluxe edition)", " - deluxe edition",
+                 "(official audio)", "(official video)", "(official music video)",
+                 "[official audio]", "[official video]", "(official lyric video)",
+                 "(lyric video)", "(lyrics)", "(audio)", "[audio]", "(hq)", "(hd)",
+                 "- topic", "(topic)"):
         s = s.replace(junk, "")
     keep = "".join(c if (c.isalnum() or c == " ") else " " for c in s)
     return " ".join(keep.split())
@@ -46,7 +52,6 @@ def tags(path: str):
         return a, t
     return "", base
 
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("csv")
@@ -68,15 +73,29 @@ def main() -> int:
                 a, t = tags(os.path.join(root, fn))
                 have.add((norm(a), norm(t)))
     have_keys = sorted("|".join(k) for k in have)
+    # flat "everything the file claims" string, used for containment matching
+    have_full = [k[0] + " " + k[1] for k in have]
+
+    def found(a: str, t: str) -> bool:
+        """Is this want-row already on disk?
+
+        Substring containment first: the download of a user upload often lands as
+        "mangeldeth74 - Louis Jordan - Is You Is ...", where the artist tag is the
+        channel name. Both halves still appear somewhere in the file's text, so
+        containment catches what an exact key never will. Fuzzy ratio second, for
+        spelling drift ("Barry 'Kid' Martyn" vs "Barry Martyn").
+        """
+        na, nt = norm(a), norm(t)
+        if na and nt:
+            for full in have_full:
+                if na in full and nt in full:
+                    return True
+        key = na + "|" + nt
+        return bool(difflib.get_close_matches(key, have_keys, n=1, cutoff=0.86))
 
     missing, matched = [], 0
     for a, t, station in want:
-        key = norm(a) + "|" + norm(t)
-        if key in have:
-            matched += 1
-            continue
-        near = difflib.get_close_matches(key, have_keys, n=1, cutoff=0.86)
-        if near:
+        if found(a, t):
             matched += 1
             continue
         missing.append((a, t, station))
