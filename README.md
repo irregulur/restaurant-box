@@ -205,6 +205,22 @@ What it does:
 Read the output: `+` tagged with art, `-` corrected names but the catalogue had no match
 (obscure 78 rpm transfers land here), `?` the file is not in `songs.csv` and was left alone.
 
+Matching ignores everything Pandora wraps in brackets — `Cabaret (Single Version)`,
+`Memphis Blues (feat. Bob Haggart ...)`, `Sway (Quien Será)` — and ignores accents, so
+`Pérez Prado` and `Perez Prado` are one band. Files that genuinely have no row can be
+named from a hand-written list instead of editing the original CSV:
+
+```
+music/songs-supplement.csv
+```
+
+```bash
+./music/tags.py songs.csv /srv/music --extra music/songs-supplement.csv
+```
+
+The catalogue announces itself with the same bracketed noise, so names are written clean:
+`Diga Diga Doo`, not `Diga Diga Doo (feat. Clint Baker, Duke Heitger, ...)`.
+
 ### Turning `pandora/songs.csv` into a shopping list
 
 ```bash

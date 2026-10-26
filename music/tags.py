@@ -26,7 +26,8 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from wanted import AUDIO, norm, tags as probe_tags  # noqa: E402
+from wanted import (AUDIO, best_want, clean, norm,  # noqa: E402
+                    tags as probe_tags)
 
 from mutagen.flac import Picture  # noqa: E402
 from mutagen.id3 import APIC, ID3  # noqa: E402
@@ -212,6 +213,73 @@ def write_tags(path: str, artist: str, title: str, album: str = "",
         f.save()
 
 
+def read_tags(path: str):
+    """Current (artist, title) from the file itself.
+
+    ffprobe reports no format_tags at all for Ogg/Opus, so wanted.probe_tags would
+    hand back the filename on most of this library. mutagen reads the real comment
+    headers, which makes the change count honest.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in (".opus", ".ogg"):
+            f = OggOpus(path) if ext == ".opus" else OggVorbis(path)
+            a, t = f.get("artist"), f.get("title")
+        elif ext in (".m4a", ".aac", ".mp4"):
+            f = MP4(path)
+            a, t = f.get("\xa9ART"), f.get("\xa9nam")
+        elif ext == ".mp3":
+            g = MP3(path).tags or {}
+            a, t = g.get("TPE1"), g.get("TIT2")
+        else:
+            a = t = None
+        a = str(a[0]) if a else ""
+        t = str(t[0]) if t else ""
+        if a or t:
+            return a, t
+    except Exception:
+        pass
+    return probe_tags(path)
+
+
+def write_tags(path: str, artist: str, title: str, album: str = "",
+               year: str = "", track: str = "", dry: bool = False) -> None:
+    ext = os.path.splitext(path)[1].lower()
+    if dry:
+        return
+    if ext in (".opus", ".ogg"):
+        f = OggOpus(path) if ext == ".opus" else OggVorbis(path)
+        f["artist"] = [artist]
+        f["title"] = [title]
+        f["albumartist"] = [artist]
+        if album:
+            f["album"] = [album]
+        if year:
+            f["date"] = [year]
+        if track:
+            f["tracknumber"] = [track]
+        # yt-dlp leaves the uploader's blurb behind; it is noise in mympd
+        for junk in ("comment", "description", "purl", "synopsis", "channel"):
+            if junk in f:
+                del f[junk]
+        f.save()
+    elif ext in (".m4a", ".aac"):
+        f = MP4(path)
+        f["\xa9ART"] = [artist]
+        f["\xa9nam"] = [title]
+        f["aART"] = [artist]
+        if album:
+            f["\xa9alb"] = [album]
+        if year:
+            f["\xa9day"] = [year]
+        if track:
+            f["trkn"] = [(int(track.split("/")[0] or 0), 0)]
+        for junk in ("\xa9cmt", "desc", "ldes"):
+            if junk in f:
+                del f[junk]
+        f.save()
+
+
 def cover(need: str, have: set) -> float:
     """Fraction of the want-row's words that appear in this file's text.
 
@@ -254,16 +322,20 @@ def main() -> int:
     ap.add_argument("--dry", action="store_true", help="say what would change, write nothing")
     ap.add_argument("--only-tags", action="store_true", help="fix names from the csv, no network")
     ap.add_argument("--force", action="store_true", help="re-fetch art even if already present")
+    ap.add_argument("--extra", action="append", default=[], metavar="CSV",
+                    help="additional artist,title list (repeatable) for rows songs.csv lacks")
     ap.add_argument("--sleep", type=float, default=3.0,
                     help="seconds between itunes calls (their limit is ~20/minute)")
     args = ap.parse_args()
 
     want = []
-    with open(args.csv, newline="", encoding="utf-8", errors="replace") as f:
-        for row in csv.DictReader(f):
-            a, t = (row.get("artist") or "").strip(), (row.get("title") or "").strip()
-            if a or t:
-                want.append((a, t))
+    for path in [args.csv] + args.extra:
+        with open(path, newline="", encoding="utf-8", errors="replace") as f:
+            for row in csv.DictReader(f):
+                a = (row.get("artist") or "").strip()
+                t = (row.get("title") or "").strip()
+                if a or t:
+                    want.append((a, t))
 
     files = []
     for root, _, names in os.walk(args.library):
@@ -310,9 +382,13 @@ def main() -> int:
             print(f"  -  {artist} - {title}  (no catalogue match, names only)")
             continue
 
-        album = (res.get("collectionName") or "").strip()
+        album = clean(res.get("collectionName"))
         year = (res.get("releaseDate") or "")[:4]
         trk = str(res.get("trackNumber") or "")
+        # The catalogue spells it for humans ("Cabaret", not "Cabaret (Single
+        # Version)"), and album+artist+title then agree with each other.
+        title = clean(res.get("trackName")) or title
+        artist = clean(res.get("artistName")) or artist
         img = None
         try:
             img = fetch_cover(res.get("artworkUrl100", ""))

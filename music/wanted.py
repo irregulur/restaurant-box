@@ -11,13 +11,21 @@ import argparse
 import csv
 import difflib
 import os
+import re
 import subprocess
 import sys
+import unicodedata
 
 AUDIO = (".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".aac")
 
 
 def norm(s: str) -> str:
+    # Pandora writes "Cabaret (Single Version)", "Memphis Blues (feat. Bob Haggart ...)",
+    # "Sway (Quien Será)" and the downloads say "Cabaret", "Memphis Blues", "Sway".
+    # Every bracketed aside goes, so the two sides can meet. Accents go too, because
+    # "Pérez Prado" and "Perez Prado" are the same band.
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    s = re.sub(r"[\(\[].*?[\)\]]", " ", s)
     s = s.lower()
     # Everything below is noise that YouTube/Deezer/whatever appends to a title and
     # that the want-list never has: "(1990 Remaster)", "(Official Audio)", "- Topic" ...
@@ -30,6 +38,48 @@ def norm(s: str) -> str:
         s = s.replace(junk, "")
     keep = "".join(c if (c.isalnum() or c == " ") else " " for c in s)
     return " ".join(keep.split())
+
+
+def cover(need: str, have: set) -> float:
+    """Fraction of a want-row's words that appear in a file's text.
+
+    Substring containment is too brittle for real uploads: the catalogue says
+    "Sidney Bechet & His New Orleans Feetwarmers", the uploader wrote "by Sidney
+    Bechet and his New Orleans Feetwarmers", and one inserted word breaks the test.
+    Word coverage forgives the insert and still refuses a different song.
+    """
+    toks = set(need.split())
+    if not toks:
+        return 0.0
+    return len(toks & have) / len(toks)
+
+
+def best_want(text: str, want):
+    """Which want-row this file is, if any: best word coverage of artist and title."""
+    have = set(text.split())
+    best, score = None, 0.0
+    for row in want:
+        a, t = row[0], row[1]          # (artist, title) or (artist, title, station)
+        na, nt = norm(a), norm(t)
+        if not nt:
+            continue
+        ca, ct = cover(na, have), cover(nt, have)
+        # 0.75 title coverage is the normal bar. Allow one missing word of three when
+        # the artist is unmistakable and two title words survive, which is what
+        # "Franklin St Blues" vs "Franklin Street Blues" looks like.
+        if ct < 0.75 and not (ct >= 0.6 and ca >= 0.8
+                              and len(set(nt.split()) & have) >= 2):
+            continue
+        score_now = ca * 0.9 + ct + (0.15 if nt in text else 0.0)
+        if score_now > score:
+            best, score = (a, t), score_now
+    return best if score >= 1.45 else None
+
+
+def clean(s: str) -> str:
+    """Human-readable tag: drop "(feat. ...)" and "(Single Version)" noise."""
+    s = re.sub(r"[\(\[].*?[\)\]]", " ", s or "")
+    return " ".join(s.split())
 
 
 def tags(path: str):
@@ -66,36 +116,26 @@ def main() -> int:
             if a or t:
                 want.append((a, t, row.get("station", "")))
 
-    have = set()
+    # Which file is which row: same rule tags.py uses to name things, so "have" here
+    # and "tagged" there never disagree.
+    have_keys, have_full = [], []
+    matched_rows = set()
     for root, _, files in os.walk(args.library):
         for fn in files:
-            if fn.lower().endswith(AUDIO):
-                a, t = tags(os.path.join(root, fn))
-                have.add((norm(a), norm(t)))
-    have_keys = sorted("|".join(k) for k in have)
-    # flat "everything the file claims" string, used for containment matching
-    have_full = [k[0] + " " + k[1] for k in have]
-
-    def found(a: str, t: str) -> bool:
-        """Is this want-row already on disk?
-
-        Substring containment first: the download of a user upload often lands as
-        "mangeldeth74 - Louis Jordan - Is You Is ...", where the artist tag is the
-        channel name. Both halves still appear somewhere in the file's text, so
-        containment catches what an exact key never will. Fuzzy ratio second, for
-        spelling drift ("Barry 'Kid' Martyn" vs "Barry Martyn").
-        """
-        na, nt = norm(a), norm(t)
-        if na and nt:
-            for full in have_full:
-                if na in full and nt in full:
-                    return True
-        key = na + "|" + nt
-        return bool(difflib.get_close_matches(key, have_keys, n=1, cutoff=0.86))
+            if not fn.lower().endswith(AUDIO):
+                continue
+            path = os.path.join(root, fn)
+            a, t = tags(path)
+            text = norm(a) + " " + norm(t) + " " + norm(os.path.splitext(fn)[0])
+            have_full.append(text)
+            hit = best_want(text, want)
+            if hit:
+                matched_rows.add((hit[0], hit[1]))
+    have_keys = sorted(set(have_full))
 
     missing, matched = [], 0
     for a, t, station in want:
-        if found(a, t):
+        if (a, t) in matched_rows:
             matched += 1
             continue
         missing.append((a, t, station))
@@ -106,7 +146,7 @@ def main() -> int:
         w.writerows(missing)
 
     print(f"want {len(want)}  have {matched}  missing {len(missing)}  "
-          f"library {len(have)}  ->  {args.out}")
+          f"library {len(have_full)}  ->  {args.out}")
     return 0
 
 
