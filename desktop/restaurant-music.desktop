@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Music
+Name[en_US]=Music
+Comment=Play or pause the restaurant music
+Exec=/usr/local/bin/restaurant-music
+Icon=multimedia-audio-player
+Terminal=false
+Categories=AudioVideo;Player;
+Keywords=music;radio;play;
+StartupNotify=false

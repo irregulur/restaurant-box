@@ -40,6 +40,36 @@ see "Phase 2 — cameras" for when buying one would actually buy you something.
 
 ---
 
+## What the employees see
+
+The box boots straight to a desktop with **two big buttons** — nothing else to learn.
+Autologin is installed, so a power cut ends with the menu back on screen, no login prompt.
+
+| Button | Opens | Needs |
+|---|---|---|
+| **Music** | mympd in a full-screen app window: play/pause, volume, playlist | nothing — works today |
+| **Cameras** | the DVR app (RXCamView) inside Waydroid, full screen | `waydroid` + the app installed once |
+
+Both are ordinary `.desktop` launchers, so they also appear in the app menu.
+If something is wrong the button says so in plain words ("The music player is not
+responding — try again in a minute") instead of opening a blank page.
+
+Make it feel like an appliance:
+
+- **Settings → Power / Screen Locking**: screen energy saving *off*, screen locking *disabled*.
+  A menu that goes dark mid-shift is the most likely "it's broken" call you will get.
+- The desktop icons are auto-aligned by Plasma; drag them apart once, Plasma remembers.
+- `restaurant-audio` restarts mpd and rebuilds the playlist on its own — an employee only
+  ever needs the two buttons, and "try again in a minute" is genuinely the right advice.
+
+```bash
+restaurant-music          # same as the Music button, useful over ssh
+restaurant-cams           # same as the Cameras button
+mpc status               # what is actually playing, from a terminal
+```
+
+---
+
 ## What goes where
 
 | Piece | Node | Why there |
@@ -196,16 +226,19 @@ table inet admin {
 ## Files
 
 ```
-install.sh                 music + remote side (site A)
+install.sh                   music + remote side (site A)
 systemd/restaurant-audio.service
-music/mpd.conf             minimal headless mpd, ALSA out, replaygain
-music/restaurant-audio.sh  keeper loop: mpd up, queue loaded, playing
-music/wanted.py            songs.csv vs library -> what still needs buying
-cams/waydroid.md           one-screen cameras: Android app on the mini PC
-cams/waydroid-cam.sh       start container/session, launch the viewer app
-cams/probe.sh              DVR port + RTSP path discovery
-cams/install-cams.sh       go2rtc on the node that sits next to the DVR (site B)
-cams/go2rtc.yaml           stream definitions
+music/mpd.conf               minimal headless mpd, ALSA out, replaygain
+music/restaurant-audio.sh    keeper loop: mpd up, queue loaded, playing
+music/wanted.py              songs.csv vs library -> what still needs buying
+desktop/restaurant-music.sh  the Music button (mympd, full screen)
+desktop/restaurant-cams.sh   the Cameras button (Waydroid + DVR app)
+desktop/*.desktop            the two icons the employees click
+cams/waydroid.md             one-screen cameras: Android app on the mini PC
+cams/waydroid-cam.sh         start container/session, launch the viewer app
+cams/probe.sh                DVR port + RTSP path discovery
+cams/install-cams.sh         go2rtc on the node that sits next to the DVR (site B)
+cams/go2rtc.yaml             stream definitions
 cams/go2rtc.service
 ops/health.sh + .service/.timer   ntfy watchdog
 ```

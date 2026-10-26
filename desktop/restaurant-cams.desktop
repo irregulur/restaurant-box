@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Cameras
+Name[en_US]=Cameras
+Comment=Watch the other restaurant's cameras
+Exec=/usr/local/bin/restaurant-cams
+Icon=camera-web
+Terminal=false
+Categories=AudioVideo;
+Keywords=camera;dvr;security;watch;
+StartupNotify=false

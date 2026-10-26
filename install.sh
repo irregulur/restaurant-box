@@ -18,7 +18,7 @@ fi
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 
 echo "== packages =="
-pacman -S --needed --noconfirm mpd mpc mympd ffmpeg jq curl nmap cockpit tailscale
+pacman -S --needed --noconfirm mpd mpc mympd ffmpeg jq curl nmap cockpit tailscale chromium
 
 echo "== directories =="
 # group-writable so you can rsync music in as your own user; mpd only needs read
@@ -38,6 +38,36 @@ echo "== scripts =="
 install -m755 "$SRC/music/restaurant-audio.sh" /usr/local/bin/restaurant-audio
 install -m755 "$SRC/ops/health.sh"            /usr/local/bin/restaurant-health
 install -m755 "$SRC/music/wanted.py"          /usr/local/bin/restaurant-wanted
+install -m755 "$SRC/desktop/restaurant-music.sh" /usr/local/bin/restaurant-music
+install -m755 "$SRC/desktop/restaurant-cams.sh"  /usr/local/bin/restaurant-cams
+
+echo "== employee screen =="
+# Two big buttons on the desktop (plus an entry in the app menu) and autologin, so a
+# power cut brings the screen back by itself. Employees never see a login prompt.
+DESKTOP_USER="${SUDO_USER:-}"
+if [ -n "$DESKTOP_USER" ] && [ "$DESKTOP_USER" != root ]; then
+    UHOME="$(getent passwd "$DESKTOP_USER" | cut -d: -f6)"
+    install -d -o "$DESKTOP_USER" -g "$DESKTOP_USER" "$UHOME/Desktop"
+    for f in restaurant-music.desktop restaurant-cams.desktop; do
+        install -m755 -o "$DESKTOP_USER" -g "$DESKTOP_USER" "$SRC/desktop/$f" "$UHOME/Desktop/$f"
+    done
+    echo "added Music + Cameras icons to $UHOME/Desktop"
+else
+    echo "skipped desktop icons: no login user detected (run the installer via sudo ./install.sh as that user)"
+fi
+install -d /usr/share/applications
+install -m644 "$SRC/desktop/restaurant-music.desktop" /usr/share/applications/
+install -m644 "$SRC/desktop/restaurant-cams.desktop"  /usr/share/applications/
+
+if [ -n "$DESKTOP_USER" ] && [ "$DESKTOP_USER" != root ] && command -v plasmalogin >/dev/null 2>&1; then
+    install -d /etc/plasmalogin.conf.d
+    cat > /etc/plasmalogin.conf.d/10-autologin.conf <<EOA
+[Autologin]
+User=$DESKTOP_USER
+Session=plasma
+EOA
+    echo "autologin on for $DESKTOP_USER (Session=plasma) — verify with: cat /etc/plasmalogin.conf.d/10-autologin.conf"
+fi
 
 echo "== systemd units =="
 install -m644 "$SRC/systemd/restaurant-audio.service" /etc/systemd/system/
@@ -82,7 +112,20 @@ Done. Three things are still manual:
 2) Copy music in (FLAC/MP3/M4A/OGG):
      rsync -av ~/Music/restaurant/ $(hostname):/srv/music/
 
-3) Remote access from home:
+3) Cameras (Android app in a container — no phone needed on the counter):
+     sudo pacman -S --needed waydroid waydroid-image
+     sudo waydroid init                     # downloads the Android image once
+     waydroid session start && waydroid show-full-ui
+     # install RXCamView inside Android, log in once, then:
+     waydroid app list                      # find its package name
+     echo 'CAM_PKG=<package>' | sudo tee /etc/restaurant-cams.conf
+     # the Cameras button now opens it directly
+
+4) Screen settings (Settings -> Power / Screen Locking):
+     Screen Energy Saving: off   |   Screen Locking: disabled
+     Otherwise the menu goes dark while the shop is open.
+
+5) Remote access from home:
      sudo tailscale up --ssh
      # then: ssh $(hostname)   or   http://$(hostname):9090  (Cockpit)
      sudo systemctl enable --now sshd
