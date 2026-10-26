@@ -28,11 +28,21 @@ install -d /var/lib/restaurant-health
 [ -n "${SUDO_USER:-}" ] && usermod -aG mpd "$SUDO_USER" && echo "added $SUDO_USER to group mpd (re-login for it to apply)"
 
 echo "== mpd config =="
-if [ -f /etc/mpd.conf ] && ! grep -q 'restaurant-box' /etc/mpd.conf; then
-    cp -a /etc/mpd.conf "/etc/mpd.conf.bak.$(date +%s)"
-    echo "kept existing /etc/mpd.conf as a backup"
+# Never clobber a working /etc/mpd.conf: the audio device is the one machine-specific
+# line in it, and the installer has no idea which card this box actually has.
+if [ -f /etc/mpd.conf ] && [ "${RESET_MPDCONF:-0}" != 1 ]; then
+    echo "keeping existing /etc/mpd.conf (RESET_MPDCONF=1 to overwrite with the template)"
+else
+    [ -f /etc/mpd.conf ] && cp -a /etc/mpd.conf "/etc/mpd.conf.bak.$(date +%s)"
+    install -m644 "$SRC/music/mpd.conf" /etc/mpd.conf
 fi
-install -m644 "$SRC/music/mpd.conf" /etc/mpd.conf
+# Sanity-check the configured sound card, because a wrong id is silent and confusing.
+dev=$(sed -n 's/.*device[[:space:]]*"hw:\([^,"]*\).*/\1/p' /etc/mpd.conf | head -1)
+if [ -n "$dev" ] && command -v aplay >/dev/null 2>&1 &&
+   ! aplay -l 2>/dev/null | grep -qi "card [0-9]*: $dev "; then
+    echo "!! /etc/mpd.conf wants sound card '$dev', but aplay -l does not list one: silent speakers."
+    echo "   aplay -l   then:  sudo sed -i 's/device *\"hw:[^\"]*\"/device \"hw:ID,0\"/' /etc/mpd.conf"
+fi
 
 echo "== scripts =="
 install -m755 "$SRC/music/restaurant-audio.sh" /usr/local/bin/restaurant-audio
@@ -55,9 +65,13 @@ if [ -n "$DESKTOP_USER" ] && [ "$DESKTOP_USER" != root ]; then
 else
     echo "skipped desktop icons: no login user detected (run the installer via sudo ./install.sh as that user)"
 fi
-install -d /usr/share/applications
+install -d /usr/share/applications /usr/local/share/icons
 install -m644 "$SRC/desktop/restaurant-music.desktop" /usr/share/applications/
 install -m644 "$SRC/desktop/restaurant-cams.desktop"  /usr/share/applications/
+# Ship the icons ourselves — the stock theme names were missing on this box, which
+# left both launchers with a blank square.
+install -m644 "$SRC/desktop/icons/restaurant-music.svg" /usr/local/share/icons/
+install -m644 "$SRC/desktop/icons/restaurant-cams.svg"  /usr/local/share/icons/
 
 if [ -n "$DESKTOP_USER" ] && [ "$DESKTOP_USER" != root ] && command -v plasmalogin >/dev/null 2>&1; then
     install -d /etc/plasmalogin.conf.d

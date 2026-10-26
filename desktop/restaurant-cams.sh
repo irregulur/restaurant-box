@@ -60,6 +60,7 @@ Try again once — the first start after boot can take 30 seconds."; exit 1; }
 
 # Find the DVR app if we were not told its package name.
 # `waydroid app list` prints blocks:  Name: X\n packageName: y\n categories:
+PKG="${CAM_PKG:-}"
 if [ -z "$PKG" ]; then
     PKG=$(waydroid app list 2>/dev/null |
           awk '/^Name:/{n=$0} /^packageName:/{print $2, n}' |

@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
-# The "Music" button. Opens mympd in a full-screen app window: play/pause,
-# volume, playlist — nothing else on screen.
+# The "Music" button. Opens mympd in its own app window: play/pause, volume,
+# playlist — nothing else on screen.
+#
+# Windowed on purpose: employees still need the desktop to press "Cameras",
+# and a fullscreen app hides the taskbar. /etc/restaurant-music.conf can put it
+# back:
+#   MUSIC_FULLSCREEN=1
+#   MYMPD_URL="http://127.0.0.1:8080"
 set -uo pipefail
 
 URL="${MYMPD_URL:-http://127.0.0.1:8080}"
+FULLSCREEN="${MUSIC_FULLSCREEN:-0}"
+[ -f /etc/restaurant-music.conf ] && . /etc/restaurant-music.conf
 say() { kdialog --title "Music" --error "$1" 2>/dev/null ||
         zenity --error --title "Music" --text="$1" 2>/dev/null ||
         printf '%s\n' "$1" >&2; }
@@ -24,5 +32,10 @@ Try again in a minute — it restarts itself. If this keeps happening, tell the 
     exit 1
 fi
 
-exec "$BROWSER" --app="$URL" --start-fullscreen \
-    --no-first-run --no-default-browser-check --disable-features=Translate
+flags=(--app="$URL" --no-first-run --no-default-browser-check --disable-features=Translate)
+if [ "$FULLSCREEN" = 1 ]; then
+    flags+=(--start-fullscreen)
+else
+    flags+=(--window-size=1100,760)
+fi
+exec "$BROWSER" "${flags[@]}"

@@ -50,7 +50,7 @@ Autologin is installed, so a power cut ends with the menu back on screen, no log
 
 | Button | Opens | Needs |
 |---|---|---|
-| **Music** | mympd in a full-screen app window: play/pause, volume, playlist | nothing — works today |
+| **Music** | mympd in its own window: play/pause, volume, playlist | nothing — works today |
 | **Cameras** | `mpv` full screen on the DVR's video stream | the DVR password, once (Phase 2) |
 
 Both are ordinary `.desktop` launchers, so they also appear in the app menu.
@@ -93,8 +93,8 @@ sudo ./install.sh                 # mpd, mympd, tools, dirs, units, suspend mask
 rsync -av ~/Music/restaurant/ mini:/srv/music/     # or copy by hand
 
 # 2. fix the DAC device name once — this is the only thing that ever needs hand-editing
-aplay -l                          # e.g. "card 1: CODEC [USB Audio CODEC], device 0"
-sudoedit /etc/mpd.conf            # audio_output.device -> "hw:CODEC,0"  (hw:1,0 also works)
+aplay -l                          # e.g. "card 1: PCH [HDA Intel PCH], device 0"
+sudoedit /etc/mpd.conf            # audio_output.device -> "hw:PCH,0"  (USB DAC: hw:CODEC,0)
 
 sudo systemctl enable --now mpd mympd restaurant-audio
 ```
@@ -105,6 +105,25 @@ stop, the amp can lose power, mpd can crash; music comes back by itself.
 
 Music control: `http://<mini-pc>:8080` → mympd from any phone, or `mpc` over SSH.
 The queue is rebuilt and reshuffled each boot, so no infinite loop on one track.
+
+#### Building the queue from the terminal
+
+The queue is a playlist of everything in `/srv/music` — no need to add tracks one by one:
+
+```bash
+mpc update                 # scan the library for new files (also happens automatically)
+mpc clear                  # empty the queue
+mpc add /                  # queue every file in the library
+mpc repeat 1               # loop the queue, not one track
+mpc random 0               # play it in order (set 1 for shuffle)
+mpc play
+mpc save restaurant        # remembers it as "restaurant" -> later: mpc load restaurant
+mpc status                 # [playing] + track + volume
+```
+
+`restaurant-audio` does the same thing automatically whenever the queue is empty, so this is
+the manual version of what already happens after a reboot. Volume is `mpc volume +5` /
+`mpc volume 70`; the whole thing is also `mympd` at `http://<mini-pc>:8080`.
 
 ### Turning `pandora/songs.csv` into a shopping list
 
