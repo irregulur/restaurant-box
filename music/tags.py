@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -59,6 +60,54 @@ def _get(url: str, timeout: int = 30) -> bytes:
     raise RuntimeError("unreachable")
 
 
+def _ascii(s: str) -> str:
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+
+
+def _search(term: str, limit: int = 10):
+    q = urllib.parse.urlencode({"term": _ascii(term), "entity": "song",
+                                "limit": limit, "country": "US"})
+    return json.loads(_get(f"https://itunes.apple.com/search?{q}", 20)).get("results", [])
+
+
+def _pick(results, artist: str, title: str, min_artist: float, min_score: float):
+    want_a, want_t = norm(artist), norm(title)
+    best = None
+    for r in results:
+        ra, rt = norm(r.get("artistName", "")), norm(r.get("trackName", ""))
+        if not rt:
+            continue
+        score = 2.0 if rt == want_t else \
+            difflib.SequenceMatcher(None, rt, want_t).ratio() * 1.5
+        a_sim = difflib.SequenceMatcher(None, ra, want_a).ratio()
+        if ra == want_a:
+            score += 1.0
+            a_sim = 1.0
+        elif want_a and (want_a in ra or ra in want_a):
+            score += 0.6
+            a_sim = max(a_sim, 0.9)
+        else:
+            score += a_sim * 0.4
+        if a_sim < min_artist:            # a different band's version is not the answer
+            continue
+        if any(w in ra for w in ("karaoke", "tribute", "cover", "made famous",
+                                 "originally performed", "in the style of")):
+            score -= 2.0
+        # norm() throws the brackets away, which makes "Drop Me Off In Harlem
+        # (False Starts)" and "Drop Me Off In Harlem" look identical. They are not.
+        raw = (r.get("trackName") or "").lower()
+        if any(w in raw for w in ("false start", "alternate take", "rehearsal",
+                                  "incomplete take", "studio chatter")):
+            score -= 0.8
+        if score < min_score:
+            continue
+        key = (score, r.get("releaseDate", "9999"))
+        if best is None or key[0] > best[0][0] or (
+                abs(key[0] - best[0][0]) < 1e-6 and key[1] < best[0][1]):
+            best = (key, r)
+    return best[1] if best else None
+
+
 def itunes(artist: str, title: str):
     """Best catalogue entry for this track, or None.
 
@@ -66,39 +115,20 @@ def itunes(artist: str, title: str):
     with a karaoke version of the same name. Exact normalized matches win, then
     the earliest release wins, because for this library the original pressing is
     the useful answer and the 2011 re-issue is not.
-    """
-    q = urllib.parse.urlencode({"term": f"{artist} {title}", "entity": "song",
-                                "limit": 10, "country": "US"})
-    results = json.loads(_get(f"https://itunes.apple.com/search?{q}", 20)).get("results", [])
 
-    want_a, want_t = norm(artist), norm(title)
-    best = None
-    for r in results:
-        ra, rt = norm(r.get("artistName", "")), norm(r.get("trackName", ""))
-        if not rt:
-            continue
-        if rt == want_t:
-            score = 2.0
-        else:
-            score = difflib.SequenceMatcher(None, rt, want_t).ratio() * 1.5
-        if ra == want_a:
-            score += 1.0
-        elif want_a and (want_a in ra or ra in want_a):
-            score += 0.6
-        else:
-            score += difflib.SequenceMatcher(None, ra, want_a).ratio() * 0.4
-        # a karaoke/tribute/cover-band upload is never the answer
-        if any(w in ra for w in ("karaoke", "tribute", "cover", "made famous",
-                                 "originally performed", "in the style of")):
-            score -= 2.0
-        if score < 1.6:
-            continue
-        key = (score, r.get("releaseDate", "9999"))
-        # prefer higher score; on a tie prefer the older release
-        if best is None or key[0] > best[0][0] or (
-                abs(key[0] - best[0][0]) < 1e-6 and key[1] < best[0][1]):
-            best = (key, r)
-    return best[1] if best else None
+    Two passes, because the artist string is often where the miss happens: the
+    want-list says "Joe Daniels Jazz Group", the catalogue files it under "Joe
+    Daniels". So a miss on "artist title" is retried on the title alone, with a
+    stricter demand that the artist actually resembles the one we asked for.
+    """
+    # Even on the first pass the artist has to be the same band: "When the Saints Go
+    # Marching In" exists in every idiom, and a bare title match once tagged a Blue Cat
+    # Express track as Ernie Haase & Signature Sound.
+    artist, title = clean(artist), clean(title)     # never search with "(1990 Remaster)"
+    hit = _pick(_search(f"{artist} {title}", 10), artist, title, 0.45, 1.6)
+    if hit:
+        return hit
+    return _pick(_search(title, 25), artist, title, 0.55, 2.0)
 
 
 def fetch_cover(url: str):
@@ -407,6 +437,8 @@ def main() -> int:
         except Exception as e:                                       # noqa: BLE001
             print(f"  !  art failed for {artist} - {title}: {e}", file=sys.stderr)
         write_tags(path, artist, title, album, year, trk, dry=args.dry)
+        if not img and res.get("artworkUrl100"):
+            print(f"  !  art unavailable for {artist} - {title}", file=sys.stderr)
         if img:
             arted += 1
             if not args.dry:
