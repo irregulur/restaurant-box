@@ -116,6 +116,30 @@ python3 music/wanted.py ~/Documents/Projects/pandora/songs.csv /srv/music
 Buy those on Bandcamp/Qobuz/Amazon, drop them in `/srv/music`, re-run until the miss list is
 short. Keep `pianobar` running at home — it's your discovery engine; the CSV is the queue.
 
+#### Fastest: files on disk tonight
+
+```bash
+sudo pacman -S --needed yt-dlp ffmpeg
+./music/fetch.sh ~/songs.csv /srv/music --dry-run    # what would each search resolve to?
+./music/fetch.sh ~/songs.csv /srv/music              # do it
+```
+
+`fetch.sh` asks `wanted.py` what is still missing, turns every missing row into a
+`ytsearch1:<artist> <title>` query, and hands the list to yt-dlp. Three things keep it from
+making a mess:
+
+- `--match-filter 'duration > 90 & duration < 600'` throws out the 3-hour "smooth jazz
+  compilation" uploads and 30-second previews that dominate search results.
+- `--audio-format best` extracts the native stream and **re-encodes nothing**, so it is fast
+  and lossless relative to the source (m4a/aac and opus are both fine for mpd).
+- `--download-archive /srv/music/.ytdl-archive` remembers video ids, so a second run only
+  touches what is new instead of re-fetching 200 files.
+
+Always run `--dry-run` first: it prints the actual video title and uploader behind each
+search, which is how you spot the live take or the karaoke cover before it lands in the
+library. Anything skipped (no match, wrong duration, taken down) stays in the miss list —
+those are the ones worth buying.
+
 ### Licensing (the part software can't fix)
 
 A personal Pandora/Spotify account on business speakers violates their ToS, and US public
@@ -247,6 +271,7 @@ systemd/restaurant-audio.service
 music/mpd.conf               minimal headless mpd, ALSA out, replaygain
 music/restaurant-audio.sh    keeper loop: mpd up, queue loaded, playing
 music/wanted.py              songs.csv vs library -> what still needs buying
+music/fetch.sh               wanted list -> yt-dlp searches -> files in /srv/music
 desktop/restaurant-music.sh  the Music button (mympd, full screen)
 desktop/restaurant-cams.sh   the Cameras button (mpv on RTSP; Waydroid kept as parked fallback)
 desktop/*.desktop            the two icons the employees click
