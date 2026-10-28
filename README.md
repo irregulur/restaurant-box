@@ -23,6 +23,17 @@ rsync -av ~/Music/restaurant/ /srv/music/  # music appears on its own within 20 
 sudo tailscale up --ssh                   # then: ssh <host>, http://<host>:9090
 ```
 
+## Update (from a phone over ssh)
+
+```bash
+sudo restaurant-update
+```
+
+That pulls the latest `main` from GitHub and re-runs the installer. It's safe to repeat:
+`/etc/mpd.conf` (the sound card line) and `/srv/music` are left alone. GitHub can take a few
+minutes to serve a fresh push, so if a change you just pushed isn't there, wait and run it again.
+The first time, on a box installed before this existed, use the install one-liner above instead.
+
 No audio files yet? Everything installs and runs, but there is silence until tracks land in
 `/srv/music` — `songs.csv` is a want-list, not audio. `restaurant-wanted` tells you what to buy.
 
@@ -111,7 +122,33 @@ sudo systemctl enable --now mpd mympd restaurant-audio
 mpd is running, the queue is not empty, and something is actually playing. Staff can hit
 stop, the amp can lose power, mpd can crash; music comes back by itself.
 
+**Opening hours.** Music only runs while the restaurant is open — `restaurant-hours` decides:
+
+| Day | Music on | Off (close + 20 min for late customers) |
+|---|---|---|
+| Mon–Fri | 11:00 | 21:20 |
+| Sat | 11:00 | 22:20 |
+| Sun | closed | — |
+
+At the off time it stops once, then leaves the player alone — staff can still put music on
+while cleaning, and it will not be stopped again until the next closing. The watchdog does not
+alert about silence outside these hours. To change them, edit `music/restaurant-hours.sh` and
+re-run the installer. It uses the box's local clock; the installer sets it to `America/New_York`
+and turns on internet time sync (the battery clock covers power cuts while offline).
+
 Music control: `http://<mini-pc>:8080` → mympd from any phone, or `mpc` over SSH.
+
+**For staff ("can you turn it down?").** Two ways, no login either way:
+
+- On the box's screen: the **Music** window has the volume slider.
+- From a phone on the restaurant wifi: open `http://restaurant-box.local:8080` (or
+  `http://<box-ip>:8080`) and "Add to Home Screen" once. Volume is the speaker icon.
+
+Make sure it's **http**, not https. mympd defaults to https on 8443, which the firewall blocks.
+The installer turns that off (`systemd/mympd-restaurant.conf`), so 8080 serves the player
+directly. The volume stays where staff set it until someone changes it, including across
+restarts. Pause/stop does not stick: the keeper starts the music again within 20 s while the
+shop is open, so turning it down is the way to make it quieter.
 The queue is rebuilt and reshuffled each boot, so no infinite loop on one track.
 
 #### Building the queue from the terminal
@@ -449,7 +486,10 @@ In the order that actually solves it — the first two need nobody in the buildi
 install.sh                   music + remote side (site A)
 systemd/restaurant-audio.service
 music/mpd.conf               minimal headless mpd, ALSA out, replaygain
-music/restaurant-audio.sh    keeper loop: mpd up, queue loaded, playing
+music/restaurant-audio.sh    keeper loop: mpd up, queue loaded, playing (during opening hours)
+music/restaurant-hours.sh    the opening hours: exit 0 = music should be on
+ops/update.sh                `sudo restaurant-update`: latest from GitHub + re-run the installer
+systemd/mympd-restaurant.conf  mympd on plain http :8080 (no https redirect to a blocked :8443)
 music/wanted.py              songs.csv vs library -> what still needs buying
 music/fetch.sh               wanted list -> yt-dlp searches -> files in /srv/music
 desktop/restaurant-music.sh  the Music button (mympd, full screen)

@@ -46,7 +46,9 @@ fi
 
 echo "== scripts =="
 install -m755 "$SRC/music/restaurant-audio.sh" /usr/local/bin/restaurant-audio
+install -m755 "$SRC/music/restaurant-hours.sh" /usr/local/bin/restaurant-hours
 install -m755 "$SRC/ops/health.sh"            /usr/local/bin/restaurant-health
+install -m755 "$SRC/ops/update.sh"            /usr/local/bin/restaurant-update
 install -m755 "$SRC/music/wanted.py"          /usr/local/bin/restaurant-wanted
 install -m755 "$SRC/desktop/restaurant-music.sh" /usr/local/bin/restaurant-music
 install -m755 "$SRC/desktop/restaurant-cams.sh"  /usr/local/bin/restaurant-cams
@@ -100,10 +102,17 @@ echo "== systemd units =="
 install -m644 "$SRC/systemd/restaurant-audio.service" /etc/systemd/system/
 install -m644 "$SRC/ops/health.service"               /etc/systemd/system/
 install -m644 "$SRC/ops/health.timer"                 /etc/systemd/system/
+install -Dm644 "$SRC/systemd/mympd-restaurant.conf"   /etc/systemd/system/mympd.service.d/restaurant.conf
 systemctl daemon-reload
 
 echo "== never sleep =="
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
+echo "== clock =="
+# The music schedule (restaurant-hours) trusts the local clock: keep it synced from the
+# internet, in the restaurant's time zone (TZONE=... to override).
+timedatectl set-timezone "${TZONE:-America/New_York}" 2>/dev/null || true
+timedatectl set-ntp true 2>/dev/null || true
 
 echo "== hostname + firewall =="
 # CachyOS ships ufw default-deny-incoming, which makes ssh/rdp look 'filtered' from the LAN.
@@ -117,7 +126,7 @@ if command -v ufw >/dev/null 2>&1; then
         # moves to another building, and if the tailnet is ever down, a phone on that
         # building's wifi is the only way back in.
         for net in 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12; do
-            for p in 22 9090; do
+            for p in 22 9090 8080; do
                 ufw allow from "$net" to any port "$p" proto tcp >/dev/null 2>&1 || true
             done
         done
@@ -132,8 +141,10 @@ fi
 
 echo "== enable =="
 systemctl enable --now mpd.service
-systemctl enable --now mympd.service
-systemctl enable --now restaurant-audio.service
+systemctl enable mympd.service
+systemctl restart mympd.service              # apply the plain-http drop-in
+systemctl enable restaurant-audio.service
+systemctl restart restaurant-audio.service   # pick up a changed script on re-run
 systemctl enable --now cockpit.socket
 systemctl enable --now health.timer
 

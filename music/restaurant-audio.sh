@@ -5,6 +5,8 @@
 #   2. queue empty?             rebuild a shuffled playlist from /srv/music and load it
 #   3. not playing?             play
 # Staff may hit stop; it resumes on the next tick. That is intentional.
+# Outside opening hours (restaurant-hours) it stops the music once at closing time and
+# then leaves mpd alone, so staff can still put something on while they clean up.
 set -uo pipefail
 
 MUSIC="${MUSIC_DIR:-/srv/music}"
@@ -13,6 +15,8 @@ export MPD_HOST=127.0.0.1 MPD_PORT=6600
 INTERVAL="${INTERVAL:-20}"
 
 log() { echo "restaurant-audio: $*"; }
+open_now() { "${HOURS:-/usr/local/bin/restaurant-hours}"; }
+was_open=1   # so a boot after hours also stops anything mpd resumed on its own
 
 rebuild_playlist() {
     local out="/var/lib/mpd/playlists/$PL.m3u" n
@@ -35,6 +39,18 @@ while :; do
         sleep 3
         continue
     fi
+
+    if ! open_now; then
+        if [ "$was_open" = 1 ]; then
+            mpc stop >/dev/null 2>&1
+            log "closed: music stopped until opening time"
+            was_open=0
+        fi
+        sleep "$INTERVAL"
+        continue
+    fi
+    [ "$was_open" = 0 ] && log "open: starting music"
+    was_open=1
 
     # queue empty -> (re)load
     if [ "$(mpc playlist 2>/dev/null | wc -l)" -eq 0 ]; then

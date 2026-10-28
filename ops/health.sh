@@ -21,7 +21,7 @@ export MPD_HOST=127.0.0.1
 if systemctl list-unit-files mpd.service >/dev/null 2>&1; then
     if ! systemctl is-active --quiet mpd.service; then
         problems+=("mpd is not running")
-    elif ! mpc status 2>/dev/null | grep -q '\[playing\]'; then
+    elif /usr/local/bin/restaurant-hours && ! mpc status 2>/dev/null | grep -q '\[playing\]'; then
         problems+=("mpd is up but not playing")
     fi
 fi
