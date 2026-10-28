@@ -4,3 +4,9 @@ music/__pycache__/
 *.pyc
 *.temp.*
 *.part
+
+# Real settings live in /etc on the box, never here (repo is public)
+.env
+*.env
+*.key
+*.pem
