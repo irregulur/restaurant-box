@@ -39,7 +39,7 @@ fi
 # Sanity-check the configured sound card, because a wrong id is silent and confusing.
 dev=$(sed -n 's/.*device[[:space:]]*"hw:\([^,"]*\).*/\1/p' /etc/mpd.conf | head -1)
 if [ -n "$dev" ] && command -v aplay >/dev/null 2>&1 &&
-   ! aplay -l 2>/dev/null | grep -qi "card [0-9]*: $dev "; then
+   ! aplay -l 2>/dev/null | grep -ci "card [0-9]*: $dev " >/dev/null; then
     echo "!! /etc/mpd.conf wants sound card '$dev', but aplay -l does not list one: silent speakers."
     echo "   aplay -l   then:  sudo sed -i 's/device *\"hw:[^\"]*\"/device \"hw:ID,0\"/' /etc/mpd.conf"
 fi
@@ -116,7 +116,9 @@ echo "== wifi =="
 # bluetooth coexistence (the symptom: 'fail to flush all tx fifo queues', then the
 # wlan0 link is removed and the box is offline until a reboot). 11n_disable=1 is the
 # documented workaround; throughput does not matter for a music box.
-if lsmod | grep -q '^iwldvm'; then
+# iwldvm loaded (test the sysfs node, not `lsmod | grep -q`, which returns 141 under
+# pipefail when grep exits before lsmod finishes writing).
+if [ -d /sys/module/iwldvm ]; then
     printf 'options iwlwifi 11n_disable=1 bt_coex_active=0 power_save=0\n' > /etc/modprobe.d/restaurant-wifi.conf
     echo "wrote /etc/modprobe.d/restaurant-wifi.conf (takes effect on next boot or driver reload)"
 fi

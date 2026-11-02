@@ -86,9 +86,9 @@ while :; do
         continue
     fi
 
-    if ! printf '%s\n' "$st" | grep -q '\[playing\]'; then
-        mpc play >/dev/null 2>&1
-        log "resumed playback"
-    fi
+    case "$st" in
+        *"[playing]"*) ;;
+        *) mpc play >/dev/null 2>&1; log "resumed playback" ;;
+    esac
     sleep "$INTERVAL"
 done

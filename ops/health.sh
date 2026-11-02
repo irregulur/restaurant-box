@@ -35,8 +35,13 @@ fi
 if systemctl list-unit-files mpd.service >/dev/null 2>&1; then
     if ! systemctl is-active --quiet mpd.service; then
         problems+=("mpd is not running")
-    elif /usr/local/bin/restaurant-hours && ! mpc status 2>/dev/null | grep -q '\[playing\]'; then
-        problems+=("mpd is up but not playing")
+    elif /usr/local/bin/restaurant-hours; then
+        # capture the status: `mpc status | grep -q` returns 141 under pipefail when grep
+        # exits before mpc finishes writing, and that reads as "not playing".
+        case "$(mpc status 2>/dev/null)" in
+            *"[playing]"*) ;;
+            *) problems+=("mpd is up but not playing") ;;
+        esac
     fi
 fi
 
