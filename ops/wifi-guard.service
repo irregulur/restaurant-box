@@ -1,0 +1,8 @@
+[Unit]
+Description=Restaurant box wifi guard (reload the driver if wifi wedged)
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/restaurant-wifi-guard
+Nice=10

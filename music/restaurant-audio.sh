@@ -13,10 +13,18 @@ MUSIC="${MUSIC_DIR:-/srv/music}"
 PL="${PLAYLIST:-restaurant}"
 export MPD_HOST=127.0.0.1 MPD_PORT=6600
 INTERVAL="${INTERVAL:-20}"
+HEARTBEAT="${HEARTBEAT:-/run/restaurant-audio.heartbeat}"
+MPC="${MPC:-/usr/bin/mpc}"
 
 log() { echo "restaurant-audio: $*"; }
+# Every mpd call is time-boxed. Without this, one half-open socket to mpd wedges the loop
+# forever: no stop at closing, no start at opening, and systemd still calls the unit fine.
+mpc() { timeout 10 "$MPC" "$@"; }
 open_now() { "${HOURS:-/usr/local/bin/restaurant-hours}"; }
+# The watchdog (restaurant-health) alarms when this goes stale, so a stuck loop is visible.
+beat() { printf '%s\n' "$(date +%s)" > "$HEARTBEAT" 2>/dev/null || true; }
 was_open=1   # so a boot after hours also stops anything mpd resumed on its own
+mpd_fails=0  # consecutive 'mpd not answering' ticks: restart it instead of poking a hung unit
 
 rebuild_playlist() {
     local out="/var/lib/mpd/playlists/$PL.m3u" n
@@ -33,12 +41,22 @@ rebuild_playlist() {
 }
 
 while :; do
-    if ! mpc ping >/dev/null 2>&1; then
-        log "mpd not responding, starting it"
-        systemctl start mpd.service
+    beat
+    # mpc has no `ping`; `status` exits non-zero only when mpd can't be reached
+    if ! st=$(mpc status 2>/dev/null); then
+        mpd_fails=$((mpd_fails + 1))
+        if [ "$mpd_fails" -ge 2 ]; then
+            log "mpd not responding twice, restarting it"
+            timeout 60 systemctl restart mpd.service
+            mpd_fails=0
+        else
+            log "mpd not responding, starting it"
+            timeout 60 systemctl start mpd.service
+        fi
         sleep 3
         continue
     fi
+    mpd_fails=0
 
     if ! open_now; then
         if [ "$was_open" = 1 ]; then
@@ -68,7 +86,7 @@ while :; do
         continue
     fi
 
-    if ! mpc status 2>/dev/null | grep -q '\[playing\]'; then
+    if ! printf '%s\n' "$st" | grep -q '\[playing\]'; then
         mpc play >/dev/null 2>&1
         log "resumed playback"
     fi

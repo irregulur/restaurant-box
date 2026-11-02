@@ -17,6 +17,20 @@ mkdir -p "$(dirname "$STATE")"
 
 problems=()
 export MPD_HOST=127.0.0.1
+now=$(date +%s)
+HEARTBEAT="${HEARTBEAT:-/run/restaurant-audio.heartbeat}"
+
+# The keeper is what starts music at opening and stops it at closing. A wedged loop looks
+# perfectly healthy to systemd, so check both the unit and the heartbeat it writes each tick.
+if systemctl list-unit-files restaurant-audio.service >/dev/null 2>&1; then
+    if ! systemctl is-active --quiet restaurant-audio.service; then
+        problems+=("restaurant-audio keeper is not running")
+    else
+        hb=$(cat "$HEARTBEAT" 2>/dev/null || echo 0)
+        age=$((now - hb))
+        [ "$age" -gt 300 ] && problems+=("restaurant-audio loop is stuck (last tick ${age}s ago)")
+    fi
+fi
 
 if systemctl list-unit-files mpd.service >/dev/null 2>&1; then
     if ! systemctl is-active --quiet mpd.service; then
@@ -50,7 +64,6 @@ notify() {
     echo "notified: $1"
 }
 
-now=$(date +%s)
 last=$(cat "$STATE" 2>/dev/null || echo 0)
 
 if [ ${#problems[@]} -eq 0 ]; then

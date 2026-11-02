@@ -48,6 +48,7 @@ echo "== scripts =="
 install -m755 "$SRC/music/restaurant-audio.sh" /usr/local/bin/restaurant-audio
 install -m755 "$SRC/music/restaurant-hours.sh" /usr/local/bin/restaurant-hours
 install -m755 "$SRC/ops/health.sh"            /usr/local/bin/restaurant-health
+install -m755 "$SRC/ops/wifi-guard.sh"       /usr/local/bin/restaurant-wifi-guard
 install -m755 "$SRC/ops/update.sh"            /usr/local/bin/restaurant-update
 install -m755 "$SRC/music/wanted.py"          /usr/local/bin/restaurant-wanted
 install -m755 "$SRC/desktop/restaurant-music.sh" /usr/local/bin/restaurant-music
@@ -102,11 +103,28 @@ echo "== systemd units =="
 install -m644 "$SRC/systemd/restaurant-audio.service" /etc/systemd/system/
 install -m644 "$SRC/ops/health.service"               /etc/systemd/system/
 install -m644 "$SRC/ops/health.timer"                 /etc/systemd/system/
+install -m644 "$SRC/ops/wifi-guard.service"           /etc/systemd/system/
+install -m644 "$SRC/ops/wifi-guard.timer"             /etc/systemd/system/
 install -Dm644 "$SRC/systemd/mympd-restaurant.conf"   /etc/systemd/system/mympd.service.d/restaurant.conf
 systemctl daemon-reload
 
 echo "== never sleep =="
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
+echo "== wifi =="
+# The Centrino N-2230 / iwldvm radios in these boxes wedge on 802.11n and on
+# bluetooth coexistence (the symptom: 'fail to flush all tx fifo queues', then the
+# wlan0 link is removed and the box is offline until a reboot). 11n_disable=1 is the
+# documented workaround; throughput does not matter for a music box.
+if lsmod | grep -q '^iwldvm'; then
+    printf 'options iwlwifi 11n_disable=1 bt_coex_active=0 power_save=0\n' > /etc/modprobe.d/restaurant-wifi.conf
+    echo "wrote /etc/modprobe.d/restaurant-wifi.conf (takes effect on next boot or driver reload)"
+fi
+# wifi-guard just reloads the driver when the box has dropped off the network; only
+# nodes that actually have a wireless interface need it.
+if [ -e /sys/class/net/wlan0 ]; then
+    systemctl enable --now wifi-guard.timer
+fi
 
 echo "== clock =="
 # The music schedule (restaurant-hours) trusts the local clock: keep it synced from the

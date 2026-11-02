@@ -458,7 +458,14 @@ table inet admin {
 - `systemctl mask sleep.target suspend.target hibernate.target` (done by `install.sh`, also
   set "never blank/suspend" in the display settings if there is a screen).
 - `journalctl --setup-keys` / persistent journal, and `ops/health.sh` on a 5-minute timer pushes
-  ntfy alerts (mpd not playing, go2rtc down, tunnel down, disk >90 %).
+  ntfy alerts (mpd not playing, keeper not running or stuck, go2rtc down, tunnel down, disk >90 %).
+- **Wifi is the weakest part of this build.** The Intel Centrino N-2230 in the box wedges under
+  802.11n — kernel log shows `iwlwifi: fail to flush all tx fifo queues`, and then the kernel
+  *removes* the wlan0 link, which NetworkManager can never bring back: the box stays offline
+  until someone reboots it. `install.sh` therefore disables 802.11n (`/etc/modprobe.d/restaurant-wifi.conf`)
+  and installs `ops/wifi-guard.sh` on a 5-minute timer, which pokes NetworkManager and then
+  reloads `iwlwifi` — the only thing that recovers a removed link. If the box can reach a cable,
+  run it to `eno1`; a cabled box is one less thing to drive across town for.
 - Audio: **USB DAC or the analog jack, not HDMI.** HDMI audio dies headless when the amp is off
   at boot and is the single most common "no sound" cause in this kind of build.
 - Loudness: `./music/tag-gain.sh /srv/music` once (`rsgain custom`, because `rsgain easy` scans
@@ -471,7 +478,10 @@ In the order that actually solves it — the first two need nobody in the buildi
 
 1. **Tailnet**: `ssh <desktop-user>@<tailnet-ip>`, `http://<tailnet-ip>:9090` — both from
    `tailscale status` on either machine. If the box is not in `tailscale status`, suspect the
-   control plane (`headscale.example.com`, wherever you host it) before the box.
+   control plane (`headscale.example.com`, wherever you host it) before the box. If it is gone
+   from *both* the tailnet and the LAN, the wifi card probably wedged: `wifi-guard` reloads the
+   driver within ten minutes (one missed 5-minute ping is ignored on purpose), so retry before
+   driving over.
 2. **Same wifi as the box**: `install.sh` opens 22 and 9090 to `192.168.0.0/16`, `10.0.0.0/8`
    and `172.16.0.0/12`, so a phone on the restaurant's network reaches Cockpit even when the
    tailnet is down. Find the address on the venue router's client list.
@@ -489,6 +499,8 @@ music/mpd.conf               minimal headless mpd, ALSA out, replaygain
 music/restaurant-audio.sh    keeper loop: mpd up, queue loaded, playing (during opening hours)
 music/restaurant-hours.sh    the opening hours: exit 0 = music should be on
 ops/update.sh                `sudo restaurant-update`: latest from GitHub + re-run the installer
+ops/health.sh                ntfy watchdog every 5 min (mpd, keeper heartbeat, go2rtc, tunnel, disk)
+ops/wifi-guard.sh            reloads the iwlwifi driver when the wifi link has died
 systemd/mympd-restaurant.conf  mympd on plain http :8080 (no https redirect to a blocked :8443)
 music/wanted.py              songs.csv vs library -> what still needs buying
 music/fetch.sh               wanted list -> yt-dlp searches -> files in /srv/music

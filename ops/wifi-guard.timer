@@ -1,0 +1,11 @@
+[Unit]
+Description=Recover the wifi card if the box dropped off the network
+After=NetworkManager.service
+
+[Timer]
+OnBootSec=6min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
