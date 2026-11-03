@@ -4,6 +4,7 @@
 #   1. mpd running?             start it
 #   2. queue empty?             rebuild a shuffled playlist from /srv/music and load it
 #   3. not playing?             play
+#   4. card volume low?         back to 100 % (the speakers are turned down on the DVD remote)
 # Staff may hit stop; it resumes on the next tick. That is intentional.
 # Outside opening hours (restaurant-hours) it stops the music once at closing time and
 # then leaves mpd alone, so staff can still put something on while they clean up.
@@ -11,6 +12,7 @@ set -uo pipefail
 
 MUSIC="${MUSIC_DIR:-/srv/music}"
 PL="${PLAYLIST:-restaurant}"
+MPDCONF="${MPDCONF:-/etc/mpd.conf}"
 export MPD_HOST=127.0.0.1 MPD_PORT=6600
 INTERVAL="${INTERVAL:-20}"
 HEARTBEAT="${HEARTBEAT:-/run/restaurant-audio.heartbeat}"
@@ -25,6 +27,25 @@ open_now() { "${HOURS:-/usr/local/bin/restaurant-hours}"; }
 beat() { printf '%s\n' "$(date +%s)" > "$HEARTBEAT" 2>/dev/null || true; }
 was_open=1   # so a boot after hours also stops anything mpd resumed on its own
 mpd_fails=0  # consecutive 'mpd not answering' ticks: restart it instead of poking a hung unit
+mixer_warned=0
+
+# The card's own level keeps coming back at ~35 % after a reboot (the desktop audio stack
+# restores its saved mixer state on login), so the speakers start the day whisper-quiet
+# until someone opens alsamixer. Volume is turned down on the DVD remote, never here, so
+# the card is pinned at 100 %. Re-applied every tick: whoever resets it loses.
+max_volume() {
+    local dev ctl set=0
+    dev=$(sed -n 's/.*device[[:space:]]*"\(hw:[^,"]*\).*/\1/p' "$MPDCONF" 2>/dev/null | head -1)
+    [ -n "$dev" ] || return 0
+    # Not every codec has every control: try the usual names, ignore the ones that are absent.
+    for ctl in Master PCM Speaker Headphone; do
+        timeout 5 amixer -D "$dev" sset "$ctl" 100% unmute >/dev/null 2>&1 && set=1
+    done
+    if [ "$set" = 0 ] && [ "$mixer_warned" = 0 ]; then
+        mixer_warned=1
+        log "no mixer control found on $dev — check: amixer -D $dev scontrols"
+    fi
+}
 
 rebuild_playlist() {
     local out="/var/lib/mpd/playlists/$PL.m3u" n
@@ -42,6 +63,7 @@ rebuild_playlist() {
 
 while :; do
     beat
+    max_volume
     # mpc has no `ping`; `status` exits non-zero only when mpd can't be reached
     if ! st=$(mpc status 2>/dev/null); then
         mpd_fails=$((mpd_fails + 1))

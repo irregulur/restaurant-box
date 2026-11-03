@@ -120,7 +120,8 @@ sudo systemctl enable --now mpd mympd restaurant-audio
 
 `restaurant-audio` is not "start mpd once" — it is a keeper loop. Every 20 s it makes sure
 mpd is running, the queue is not empty, and something is actually playing. Staff can hit
-stop, the amp can lose power, mpd can crash; music comes back by itself.
+stop, the amp can lose power, mpd can crash; music comes back by itself. It also drags the
+sound card's mixer back to 100 % (see *volume* below), which is what keeps the mornings loud.
 
 **Opening hours.** Music only runs while the restaurant is open — `restaurant-hours` decides:
 
@@ -150,6 +151,14 @@ directly. The volume stays where staff set it until someone changes it, includin
 restarts. Pause/stop does not stick: the keeper starts the music again within 20 s while the
 shop is open, so turning it down is the way to make it quieter.
 The queue is rebuilt and reshuffled each boot, so no infinite loop on one track.
+
+**The card's own level is pinned at 100 %.** The box used to boot with ALSA `Master` back at
+~35 % (the desktop audio stack restores its saved mixer state at login), so the first tracks
+of the day were whisper-quiet until someone opened `alsamixer`. `restaurant-audio` now sets
+`Master`/`PCM`/`Speaker`/`Headphone` to 100 % unmuted on every 20 s tick, so whatever resets it
+loses within one tick. That leaves the DVD player's remote as the only volume control, which is
+how the speakers are actually turned down. Manual mixer fiddling is pointless on purpose — use
+mympd's slider (mpd's software volume, unaffected) or the remote.
 
 #### Building the queue from the terminal
 
@@ -496,7 +505,7 @@ In the order that actually solves it — the first two need nobody in the buildi
 install.sh                   music + remote side (site A)
 systemd/restaurant-audio.service
 music/mpd.conf               minimal headless mpd, ALSA out, replaygain
-music/restaurant-audio.sh    keeper loop: mpd up, queue loaded, playing (during opening hours)
+music/restaurant-audio.sh    keeper loop: mpd up, queue loaded, playing (during opening hours), card mixer at 100 %
 music/restaurant-hours.sh    the opening hours: exit 0 = music should be on
 ops/update.sh                `sudo restaurant-update`: latest from GitHub + re-run the installer
 ops/health.sh                ntfy watchdog every 5 min (mpd, keeper heartbeat, go2rtc, tunnel, disk)
