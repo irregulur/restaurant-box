@@ -26,6 +26,11 @@ open_now() { "${HOURS:-/usr/local/bin/restaurant-hours}"; }
 # The watchdog (restaurant-health) alarms when this goes stale, so a stuck loop is visible.
 beat() { printf '%s\n' "$(date +%s)" > "$HEARTBEAT" 2>/dev/null || true; }
 was_open=1   # so a boot after hours also stops anything mpd resumed on its own
+# ...but a keeper *restart* after closing (update, crash, systemd Restart=always) used to
+# stop the music a second time, killing whatever staff had started while cleaning. The mark
+# records the day we already stopped for, so a restart leaves the player alone.
+CLOSED_MARK="${CLOSED_MARK:-/run/restaurant-audio.closed}"
+[ "$(cat "$CLOSED_MARK" 2>/dev/null)" = "$(date +%F)" ] && was_open=0
 mpd_fails=0  # consecutive 'mpd not answering' ticks: restart it instead of poking a hung unit
 mixer_warned=0
 
@@ -81,8 +86,11 @@ while :; do
     mpd_fails=0
 
     if ! open_now; then
+        # Outside hours: stop once at closing, then hands off. Staff may start music
+        # while cleaning (mympd or `mpc play`); we do not stop it again.
         if [ "$was_open" = 1 ]; then
             mpc stop >/dev/null 2>&1
+            date +%F > "$CLOSED_MARK" 2>/dev/null || true
             log "closed: music stopped until opening time"
             was_open=0
         fi
@@ -90,6 +98,7 @@ while :; do
         continue
     fi
     [ "$was_open" = 0 ] && log "open: starting music"
+    rm -f "$CLOSED_MARK" 2>/dev/null || true
     was_open=1
 
     # queue empty -> (re)load

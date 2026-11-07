@@ -127,12 +127,13 @@ sound card's mixer back to 100 % (see *volume* below), which is what keeps the m
 
 | Day | Music on | Off (close + 20 min for late customers) |
 |---|---|---|
-| Mon–Fri | 11:00 | 21:20 |
-| Sat | 11:00 | 22:20 |
+| Mon–Thu | 11:00 | 21:20 |
+| Fri–Sat | 11:00 | 22:20 |
 | Sun | closed | — |
 
 At the off time it stops once, then leaves the player alone — staff can still put music on
-while cleaning, and it will not be stopped again until the next closing. The watchdog does not
+while cleaning, and it will not be stopped again until the next closing. That holds even if
+the keeper restarts (an update on the box, or a crash), so nothing kills their music at 9:30. The watchdog does not
 alert about silence outside these hours. To change them, edit `music/restaurant-hours.sh` and
 re-run the installer. It uses the box's local clock; the installer sets it to `America/New_York`
 and turns on internet time sync (the battery clock covers power cuts while offline).
